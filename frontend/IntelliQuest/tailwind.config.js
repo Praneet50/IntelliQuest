@@ -16,6 +16,7 @@ export default {
   plugins: [daisyui],
   daisyui: {
     themes: [
+      "light",
       {
         dark: {
           primary: "#7c3aed",

@@ -1,16 +1,70 @@
-# React + Vite
+# IntelliQuest Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AI-powered question generator application built with React, Vite, and Tailwind CSS.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- User authentication (Login/Register)
+- File upload (PDF, DOCX, TXT)
+- AI-powered question generation using Google Gemini
+- Question display with answer toggle
+- Export questions to text file
+- Protected routes
+- Modern UI with Tailwind CSS and DaisyUI
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **React 19** - UI framework
+- **Vite** - Build tool and dev server
+- **React Router** - Client-side routing
+- **Tailwind CSS** - Utility-first CSS framework
+- **DaisyUI** - Component library
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Installation
+
+```bash
+npm install
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+The application will be available at `http://localhost:5173`
+
+### Build
+
+```bash
+npm run build
+```
+
+### Preview Production Build
+
+```bash
+npm run preview
+```
+
+## Project Structure
+
+```
+src/
+├── components/       # Reusable UI components
+│   ├── auth/        # Authentication components
+│   ├── common/      # Common components
+│   ├── layout/      # Layout components
+│   ├── sidebar/     # Sidebar components
+│   ├── stepper/     # Stepper components
+│   └── upload/      # Upload related components
+├── context/         # React context providers
+├── pages/           # Page components
+├── services/        # API services
+└── assets/          # Static assets
+```
+
+## Environment Variables
+
+No environment variables needed for the frontend. Backend API runs on `http://localhost:5001` by default.

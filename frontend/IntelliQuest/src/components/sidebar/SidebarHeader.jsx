@@ -11,9 +11,9 @@ const SidebarHeader = () => {
         </svg>
       </div>
       <div>
-        <h1 className="text-xl font-bold text-white">QuestAI</h1>
-        <p className="text-xs text-secondary uppercase tracking-wider">
-          Smart Assistant
+        <h1 className="text-xl font-bold text-base-content">IntelliQuest</h1>
+        <p className="text-xs text-primary uppercase tracking-wider">
+          AI Question Generator
         </p>
       </div>
     </div>

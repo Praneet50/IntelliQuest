@@ -1,6 +1,20 @@
+import { useSession } from "../../context/SessionContext";
+import { useNavigate } from "react-router-dom";
+
 const NewSessionButton = () => {
+  const { startNewSession } = useSession();
+  const navigate = useNavigate();
+
+  const handleNewSession = () => {
+    startNewSession();
+    navigate("/dashboard");
+  };
+
   return (
-    <button className="btn btn-outline border-gray-600 hover:border-primary hover:bg-primary/10 w-full text-white normal-case rounded-xl gap-2">
+    <button
+      onClick={handleNewSession}
+      className="btn btn-outline border-base-300 hover:border-primary hover:bg-primary/10 w-full normal-case rounded-xl gap-2"
+    >
       <svg
         className="w-5 h-5"
         fill="none"

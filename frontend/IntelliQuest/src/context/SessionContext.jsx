@@ -72,11 +72,59 @@ export const SessionProvider = ({ children }) => {
    */
   const setQuestions = (questions, uploadData = null) => {
     setGeneratedQuestions(questions);
+
     if (uploadData) {
       setCurrentUploadData(uploadData);
+
+      // Ensure current session identity/name is available immediately after upload.
+      if (uploadData.uploadId) {
+        setCurrentSession((prevSession) => {
+          if (prevSession?._id === uploadData.uploadId) {
+            return {
+              ...prevSession,
+              originalFilename:
+                uploadData.filename || prevSession.originalFilename,
+            };
+          }
+
+          return {
+            _id: uploadData.uploadId,
+            originalFilename: uploadData.filename,
+            fileType: uploadData.fileType,
+          };
+        });
+      }
     }
+
     // Trigger history refresh
     setRefreshHistory((prev) => prev + 1);
+  };
+
+  /**
+   * Update current session/upload filename in memory after rename
+   */
+  const updateCurrentSessionName = (uploadId, newFilename) => {
+    setCurrentSession((prevSession) => {
+      if (!prevSession || prevSession._id !== uploadId) {
+        return prevSession;
+      }
+
+      return {
+        ...prevSession,
+        originalFilename: newFilename,
+      };
+    });
+
+    setCurrentUploadData((prevUploadData) => {
+      if (!prevUploadData || prevUploadData.uploadId !== uploadId) {
+        return prevUploadData;
+      }
+
+      return {
+        ...prevUploadData,
+        filename: newFilename,
+      };
+    });
   };
 
   const value = {
@@ -88,6 +136,7 @@ export const SessionProvider = ({ children }) => {
     loadSession,
     setQuestions,
     setCurrentUploadData,
+    updateCurrentSessionName,
   };
 
   return (

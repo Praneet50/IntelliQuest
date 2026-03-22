@@ -15,8 +15,13 @@ const HistoryList = () => {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleteError, setDeleteError] = useState("");
   const [toastMessage, setToastMessage] = useState("");
-  const { currentSession, loadSession, refreshHistory, startNewSession } =
-    useSession();
+  const {
+    currentSession,
+    loadSession,
+    refreshHistory,
+    startNewSession,
+    updateCurrentSessionName,
+  } = useSession();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -91,7 +96,11 @@ const HistoryList = () => {
       );
 
       if (currentSession?._id === updatedUpload._id) {
-        await loadSession(updatedUpload);
+        updateCurrentSessionName(
+          updatedUpload._id,
+          updatedUpload.originalFilename,
+        );
+        loadSession(updatedUpload);
       }
 
       setToastMessage(`Renamed to ${updatedUpload.originalFilename}`);

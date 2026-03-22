@@ -6,6 +6,7 @@ AI-powered Question Generator API built with Node.js and Express.
 
 - **File Upload Support**: Accepts PDF, DOCX, and TXT files
 - **Text Extraction**: Automatically extracts text from uploaded documents
+- **Scanned PDF OCR**: Automatic OCR fallback for PDF scans when embedded text is missing
 - **AI Question Generation**: Generate questions using LLM APIs (Gemini, OpenAI, GPT, etc.)
 - **Multiple Question Types**:
   - Multiple Choice
@@ -13,7 +14,7 @@ AI-powered Question Generator API built with Node.js and Express.
   - Short Answer
   - Essay
 - **Configurable Difficulty**: Easy, Medium, Hard
-- **OCR Ready**: Prepared for OCR integration for scanned documents
+- **OCR Enabled**: Built-in OCR fallback using `pdf2pic` + `tesseract.js`
 - **CORS Enabled**: Ready for React frontend integration
 - **Modular Architecture**: Clean, maintainable code structure
 
@@ -22,6 +23,8 @@ AI-powered Question Generator API built with Node.js and Express.
 - Node.js (v18 or higher)
 - npm or yarn
 - API key for your chosen LLM provider (Gemini, OpenAI, etc.)
+- GraphicsMagick (required for PDF OCR)
+- Ghostscript (required for PDF OCR)
 
 ## 🛠️ Installation
 
@@ -51,10 +54,26 @@ AI-powered Question Generator API built with Node.js and Express.
    FRONTEND_URL=http://localhost:5173
    ```
 
-4. **Create uploads directory:**
-   ```bash
-   mkdir uploads
-   ```
+# OCR configuration (optional)
+
+ENABLE_PDF_OCR=true
+OCR_LANGUAGE=eng
+OCR_PAGE_LIMIT=20
+PDF_OCR_MIN_TEXT_CHARS=30
+
+````
+
+5. **Install OCR system dependencies (for scanned PDFs):**
+
+On Windows, install these tools and ensure they are available on your `PATH`:
+
+- Ghostscript: https://www.ghostscript.com/releases/gsdnld.html
+- GraphicsMagick: http://www.graphicsmagick.org/download.html
+
+6. **Create uploads directory:**
+```bash
+mkdir uploads
+````
 
 ## 🚀 Running the Server
 
@@ -217,7 +236,7 @@ The `services/questionService.js` file contains placeholder functions. To enable
 ## 🔮 Future Enhancements
 
 - [ ] Implement actual LLM API integration
-- [ ] Add OCR support for scanned PDFs
+- [x] Add OCR support for scanned PDFs
 - [ ] Database integration for storing questions
 - [ ] User authentication and authorization
 - [ ] Question history and favorites
@@ -254,6 +273,12 @@ netstat -ano | findstr :5000    # Windows
 - Check file size (max 10MB by default)
 - Verify file type is PDF, DOCX, or TXT
 - Ensure uploads/ directory exists and is writable
+
+**Scanned PDF OCR errors:**
+
+- Install Ghostscript and GraphicsMagick
+- Verify both tools are available in your system `PATH`
+- Reduce `OCR_PAGE_LIMIT` for very large scanned files
 
 **AI generation not working:**
 

@@ -114,8 +114,8 @@ const QuestionDisplay = ({ questions }) => {
     });
 
     const rawName =
-      currentUploadData?.filename ||
       currentSession?.originalFilename ||
+      currentUploadData?.filename ||
       "generated-questions";
 
     const baseName = rawName.replace(/\.[^/.]+$/, "").trim();

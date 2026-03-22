@@ -6,6 +6,16 @@
 
 const API_BASE_URL = "http://localhost:5001";
 
+class ApiError extends Error {
+  constructor(message, code, status, detailsPayload) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+    this.detailsPayload = detailsPayload;
+  }
+}
+
 /**
  * Get auth token from localStorage
  */
@@ -39,6 +49,7 @@ export const uploadFile = async (file, options = {}) => {
     questionType = "multiple-choice",
     difficulty = "medium",
     numQuestions = 5,
+    progressId,
   } = options;
 
   // Create form data
@@ -47,6 +58,9 @@ export const uploadFile = async (file, options = {}) => {
   formData.append("questionType", questionType);
   formData.append("difficulty", difficulty);
   formData.append("numQuestions", numQuestions);
+  if (progressId) {
+    formData.append("progressId", progressId);
+  }
 
   try {
     const response = await fetch(`${API_BASE_URL}/upload`, {
@@ -55,21 +69,57 @@ export const uploadFile = async (file, options = {}) => {
       body: formData,
     });
 
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
     if (!response.ok) {
-      const error = await response.json();
-      console.error("Backend error:", error);
-      throw new Error(
-        error.error || error.message || `Upload failed (${response.status})`,
+      console.error("Backend error:", payload);
+      throw new ApiError(
+        payload?.message ||
+          payload?.error ||
+          `Upload failed (${response.status})`,
+        payload?.code || "UPLOAD_FAILED",
+        response.status,
+        payload?.detailsPayload,
       );
     }
 
-    const data = await response.json();
-    return data;
+    return payload;
   } catch (error) {
     console.error("Upload error:", error);
     console.error("Error details:", error.message);
-    throw error;
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(
+      error.message ||
+        "Network error. Please check your connection and try again.",
+      "NETWORK_OR_UNKNOWN_ERROR",
+      0,
+    );
   }
+};
+
+/**
+ * Get upload progress by progress ID
+ *
+ * @param {string} progressId - Progress tracking ID
+ * @returns {Promise<Object>} - Progress payload
+ */
+export const getUploadProgress = async (progressId) => {
+  const response = await fetch(`${API_BASE_URL}/upload-progress/${progressId}`);
+
+  if (!response.ok) {
+    throw new Error("Progress not available yet");
+  }
+
+  return response.json();
 };
 
 /**
@@ -273,16 +323,42 @@ export const getProfile = async () => {
       headers: getHeaders(),
     });
 
-    const data = await response.json();
+    let data = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
 
     if (!response.ok) {
-      throw new Error(data.message || "Failed to get profile");
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        throw new ApiError(
+          "Session expired. Please login again.",
+          "AUTH_TOKEN_EXPIRED",
+          401,
+        );
+      }
+
+      throw new ApiError(
+        data?.message || "Failed to get profile",
+        data?.code || "GET_PROFILE_FAILED",
+        response.status,
+      );
     }
 
     return data;
   } catch (error) {
-    console.error("Get profile error:", error);
-    throw error;
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(
+      "Backend is unreachable. Please start the backend server.",
+      "BACKEND_UNAVAILABLE",
+      0,
+    );
   }
 };
 

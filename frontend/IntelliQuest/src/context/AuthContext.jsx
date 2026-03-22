@@ -46,7 +46,10 @@ export const AuthProvider = ({ children }) => {
           }
         } catch (err) {
           // Token invalid or expired
-          console.error("Auth check failed:", err);
+          if (err?.code !== "AUTH_TOKEN_EXPIRED") {
+            console.error("Auth check failed:", err);
+            setError(err?.message || "Authentication check failed.");
+          }
           localStorage.removeItem("token");
           localStorage.removeItem("user");
         }

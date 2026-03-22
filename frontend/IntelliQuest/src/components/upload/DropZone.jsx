@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 
-const DropZone = ({ onFileSelect, selectedFile, isUploading }) => {
+const DropZone = ({ onFileSelect, onError, selectedFile, isUploading }) => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -38,16 +38,17 @@ const DropZone = ({ onFileSelect, selectedFile, isUploading }) => {
     ];
 
     if (!allowedTypes.includes(file.type)) {
-      alert("Invalid file type. Please upload PDF, DOCX, or TXT files.");
+      onError?.("Invalid file type. Please upload PDF, DOCX, or TXT files.");
       return;
     }
 
     // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
-      alert("File is too large. Maximum size is 10MB.");
+      onError?.("File is too large. Maximum size is 10MB.");
       return;
     }
 
+    onError?.(null);
     onFileSelect(file);
   };
 

@@ -5,6 +5,16 @@
  * Supports various question types and difficulty levels
  */
 
+class QuestionServiceError extends Error {
+  constructor(code, message, status = 500, details) {
+    super(message);
+    this.name = "QuestionServiceError";
+    this.code = code;
+    this.status = status;
+    this.details = details;
+  }
+}
+
 /**
  * Generate questions from extracted text using AI
  *
@@ -45,7 +55,15 @@ export async function generateQuestions(text, options = {}) {
         );
       }
 
-      throw new Error(`Question generation failed: ${error.message}`);
+      if (error instanceof QuestionServiceError) {
+        throw error;
+      }
+
+      throw new QuestionServiceError(
+        "QUESTION_GENERATION_FAILED",
+        `Question generation failed: ${error.message}`,
+        500,
+      );
     }
   } else {
     console.warn("GEMINI_API_KEY not configured.");
@@ -62,8 +80,10 @@ export async function generateQuestions(text, options = {}) {
       );
     }
 
-    throw new Error(
+    throw new QuestionServiceError(
+      "AI_KEY_MISSING",
       "Gemini API key is not configured. Set GEMINI_API_KEY in backend/.env.",
+      500,
     );
   }
 }
@@ -114,7 +134,31 @@ async function callGeminiAPI(text, options) {
     if (!response.ok) {
       const errorData = await response.text();
       console.error("Gemini API error response:", errorData);
-      throw new Error(`Gemini API error (${response.status}): ${errorData}`);
+
+      if (response.status === 429) {
+        throw new QuestionServiceError(
+          "AI_RATE_LIMIT",
+          "AI API rate limit reached. Please wait a moment and try again.",
+          429,
+          { provider: "gemini", raw: errorData },
+        );
+      }
+
+      if (response.status === 403) {
+        throw new QuestionServiceError(
+          "AI_QUOTA_EXCEEDED",
+          "AI API quota exceeded or billing limit reached. Please check your Gemini plan and quota.",
+          429,
+          { provider: "gemini", raw: errorData },
+        );
+      }
+
+      throw new QuestionServiceError(
+        "AI_PROVIDER_ERROR",
+        `Gemini API error (${response.status}). Please try again later.`,
+        502,
+        { provider: "gemini", status: response.status, raw: errorData },
+      );
     }
 
     const data = await response.json();
@@ -173,6 +217,41 @@ async function callGeminiAPI(text, options) {
 }
 
 /**
+ * Build a representative sample from full extracted text.
+ *
+ * For long documents, this keeps prompt size predictable by combining:
+ * - first 1000 chars
+ * - middle 1000 chars
+ * - last 1000 chars
+ *
+ * For short text, returns the full input to avoid unnecessary slicing/duplication.
+ *
+ * @param {string} text - Full extracted text
+ * @returns {string} - Representative text for LLM prompting
+ */
+export function getRepresentativeText(text) {
+  const safeText = String(text || "");
+  const chunkSize = 1000;
+
+  if (safeText.length <= chunkSize * 3) {
+    return safeText;
+  }
+
+  const startPart = safeText.slice(0, chunkSize);
+
+  const middleStart = Math.max(
+    0,
+    Math.floor((safeText.length - chunkSize) / 2),
+  );
+  const middlePart = safeText.slice(middleStart, middleStart + chunkSize);
+
+  const endStart = Math.max(0, safeText.length - chunkSize);
+  const endPart = safeText.slice(endStart);
+
+  return `${startPart}\n\n${middlePart}\n\n${endPart}`;
+}
+
+/**
  * Build prompt for LLM based on question requirements
  *
  * Creates a well-structured prompt with instructions for the AI
@@ -183,8 +262,8 @@ async function callGeminiAPI(text, options) {
  */
 function buildPromptForLLM(text, options, promptOptions = {}) {
   const { questionType, difficulty, numQuestions } = options;
-  const { sourceCharLimit = 3000, concise = false } = promptOptions;
-  const sourceText = text.substring(0, sourceCharLimit);
+  const { concise = false } = promptOptions;
+  const sourceText = getRepresentativeText(text);
   const explanationInstruction = concise
     ? "Keep explanations extremely short, with no more than one sentence each."
     : "Keep explanations brief and directly tied to the source text.";
@@ -198,7 +277,7 @@ Format your response exactly like this:
 [
   {
     "question": "Question text here?",
-    "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
+    "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
     "correctAnswer": "A",
     "explanation": "Brief explanation of why this is correct"
   }
@@ -268,6 +347,51 @@ ${sourceText}`,
  * @param {string} questionType - Type of questions
  * @returns {Array} - Parsed questions
  */
+/**
+ * Clean up option text by removing duplicate letter prefixes
+ * Converts "A) Option text" to "Option text" since the frontend adds its own prefix
+ *
+ * @param {string} optionText - The option text to clean
+ * @returns {string} - Cleaned option text
+ */
+function cleanOptionText(optionText) {
+  if (!optionText) return optionText;
+  // Remove only true option labels like "A)", "A.", "(A)", "B) " and keep normal words intact.
+  return optionText.replace(/^\(?[A-Z]\)?[.)]\s*/, "").trim();
+}
+
+/**
+ * Clean up correct answer reference by removing letter prefix
+ * Converts "A" or "A)" to just "A"
+ *
+ * @param {string} answer - The correct answer reference
+ * @returns {string} - Cleaned answer
+ */
+function cleanAnswerText(answer) {
+  if (!answer) return answer;
+  // Extract just the letter if it's in format "A)" or "A."
+  const match = answer.match(/^([A-Z])[.)\\s]*/);
+  return match ? match[1] : answer.replace(/[.)\\s]+$/, "").trim();
+}
+
+/**
+ * Recursively clean all options and answers in questions
+ *
+ * @param {Array} questions - Array of question objects
+ * @returns {Array} - Questions with cleaned options and answers
+ */
+function cleanQuestions(questions) {
+  return questions.map((q) => ({
+    ...q,
+    options: q.options
+      ? q.options.map((opt) => cleanOptionText(opt))
+      : q.options,
+    correctAnswer: q.correctAnswer
+      ? cleanAnswerText(q.correctAnswer)
+      : q.correctAnswer,
+  }));
+}
+
 function parseAIResponse(responseText, questionType) {
   try {
     console.log("Parsing AI response. Length:", responseText.length);
@@ -291,7 +415,7 @@ function parseAIResponse(responseText, questionType) {
         const parsed = JSON.parse(jsonText);
         if (Array.isArray(parsed) && parsed.length > 0) {
           console.log(`Successfully parsed ${parsed.length} questions`);
-          return parsed;
+          return cleanQuestions(parsed);
         }
       } catch (firstError) {
         console.log(
@@ -309,7 +433,7 @@ function parseAIResponse(responseText, questionType) {
             console.log(
               `Successfully evaluated ${evaluatedArray.length} questions from JS literals`,
             );
-            return evaluatedArray;
+            return cleanQuestions(evaluatedArray);
           }
         } catch (evalError) {
           console.error("Evaluation also failed:", evalError.message);
@@ -325,7 +449,7 @@ function parseAIResponse(responseText, questionType) {
       console.log(
         `Successfully parsed ${parsed.length} questions from direct parse`,
       );
-      return parsed;
+      return cleanQuestions(parsed);
     }
 
     console.error("Response is not an array");
@@ -362,10 +486,10 @@ function generateMockQuestions(text, questionType, difficulty, numQuestions) {
       id: i + 1,
       question: `Sample multiple-choice question ${i + 1} based on the text: "${textPreview}"`,
       options: [
-        "A) Sample option 1",
-        "B) Sample option 2",
-        "C) Sample option 3",
-        "D) Sample option 4",
+        "Sample option 1",
+        "Sample option 2",
+        "Sample option 3",
+        "Sample option 4",
       ],
       correctAnswer: "A",
       explanation:

@@ -3,13 +3,78 @@ import DropZone from "./DropZone";
 import UploadButton from "./UploadButton";
 import UploadInfoNote from "./UploadInfoNote";
 import QuestionSettings from "./QuestionSettings";
-import { uploadFile } from "../../services/api";
+import { getUploadProgress, uploadFile } from "../../services/api";
+
+const createProgressId = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const mapUploadError = (error) => {
+  const code = error?.code;
+  const details = error?.detailsPayload || {};
+
+  if (code === "FILE_SIZE_LIMIT_EXCEEDED") {
+    return "File exceeds upload limit (10MB). Please upload a smaller file.";
+  }
+
+  if (code === "OCR_PAGE_LIMIT_EXCEEDED") {
+    const totalPages = details.totalPages;
+    const ocrPageLimit = details.ocrPageLimit;
+    if (totalPages && ocrPageLimit) {
+      return `This scanned PDF has ${totalPages} pages, but OCR limit is ${ocrPageLimit}. Split the PDF or increase OCR_PAGE_LIMIT on server.`;
+    }
+    return "This scanned PDF exceeds OCR page limit. Split the PDF or increase OCR_PAGE_LIMIT on server.";
+  }
+
+  if (code === "AI_RATE_LIMIT") {
+    return "AI API rate limit reached. Please wait and try again.";
+  }
+
+  if (code === "AI_QUOTA_EXCEEDED") {
+    return "AI quota exceeded or billing limit reached. Please check your Gemini usage/quota.";
+  }
+
+  if (code === "OCR_DEPENDENCIES_MISSING") {
+    return "OCR tools are missing on server. Install Ghostscript and GraphicsMagick.";
+  }
+
+  if (
+    code === "OCR_IMAGE_INVALID" ||
+    code === "OCR_IMAGE_CONVERSION_FAILED" ||
+    code === "OCR_PAGE_PROCESSING_FAILED"
+  ) {
+    return "OCR could not read this scanned PDF page image. Please try a cleaner PDF export or a higher-quality scan.";
+  }
+
+  if (code === "INVALID_FILE_TYPE") {
+    return "Invalid file type. Upload a PDF, DOCX, or TXT file.";
+  }
+
+  if (code === "AUTH_TOKEN_EXPIRED") {
+    return "Your session has expired. Please login again and retry upload.";
+  }
+
+  if (code === "BACKEND_UNAVAILABLE") {
+    return "Backend server is not running. Start backend and try again.";
+  }
+
+  if (code === "NETWORK_OR_UNKNOWN_ERROR") {
+    return "Network error. Please check backend connection and try again.";
+  }
+
+  return error?.message || "Failed to upload file. Please try again.";
+};
 
 const UploadContainer = ({ onQuestionsGenerated, onUploadComplete }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState("Uploading...");
 
   // Question settings state
   const [questionSettings, setQuestionSettings] = useState({
@@ -21,6 +86,10 @@ const UploadContainer = ({ onQuestionsGenerated, onUploadComplete }) => {
   const handleFileSelect = (file) => {
     setSelectedFile(file);
     setError(null);
+  };
+
+  const handleDropZoneError = (message) => {
+    setError(message);
   };
 
   const handleSettingsChange = (newSettings) => {
@@ -36,28 +105,53 @@ const UploadContainer = ({ onQuestionsGenerated, onUploadComplete }) => {
     setIsUploading(true);
     setError(null);
     setUploadProgress(0);
+    setUploadStatus("Uploading file...");
+
+    const progressId = createProgressId();
+    let pollInterval;
 
     try {
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 90;
+      pollInterval = setInterval(async () => {
+        try {
+          const progressResponse = await getUploadProgress(progressId);
+          if (
+            progressResponse?.status === "success" &&
+            progressResponse?.data
+          ) {
+            const nextProgress = Math.round(
+              Math.max(
+                0,
+                Math.min(100, Number(progressResponse.data.progress) || 0),
+              ),
+            );
+            setUploadProgress(nextProgress);
+            setUploadStatus(progressResponse.data.message || "Processing...");
+
+            if (
+              ["completed", "failed"].includes(progressResponse.data.status)
+            ) {
+              clearInterval(pollInterval);
+            }
           }
-          return prev + 10;
-        });
-      }, 200);
+        } catch {
+          // Progress may not exist in the first few moments; keep polling.
+        }
+      }, 600);
 
-      const response = await uploadFile(selectedFile, questionSettings);
+      // Upload the file
+      const response = await uploadFile(selectedFile, {
+        ...questionSettings,
+        progressId,
+      });
 
-      clearInterval(progressInterval);
+      clearInterval(pollInterval);
       setUploadProgress(100);
+      setUploadStatus("Complete!");
 
       // Pass the generated questions to parent component
       if (onQuestionsGenerated) {
         onQuestionsGenerated(response.data, {
-          uploadId: response.data.upload?._id,
+          uploadId: response.data.uploadId,
           filename: selectedFile.name,
           file: selectedFile,
           settings: questionSettings,
@@ -69,7 +163,10 @@ const UploadContainer = ({ onQuestionsGenerated, onUploadComplete }) => {
         onUploadComplete();
       }
     } catch (err) {
-      setError(err.message || "Failed to upload file. Please try again.");
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+      setError(mapUploadError(err));
       console.error("Upload error:", err);
     } finally {
       setIsUploading(false);
@@ -97,6 +194,7 @@ const UploadContainer = ({ onQuestionsGenerated, onUploadComplete }) => {
 
       <DropZone
         onFileSelect={handleFileSelect}
+        onError={handleDropZoneError}
         selectedFile={selectedFile}
         isUploading={isUploading}
       />
@@ -152,13 +250,17 @@ const UploadContainer = ({ onQuestionsGenerated, onUploadComplete }) => {
           {isUploading && (
             <div className="mt-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">Uploading...</span>
-                <span className="text-sm text-primary">{uploadProgress}%</span>
+                <span className="text-sm text-gray-400">{uploadStatus}</span>
+                <span className="text-sm text-primary">
+                  {Math.round(Math.min(uploadProgress, 100))}%
+                </span>
               </div>
               <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-primary transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
+                  style={{
+                    width: `${Math.round(Math.min(uploadProgress, 100))}%`,
+                  }}
                 />
               </div>
             </div>

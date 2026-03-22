@@ -12,6 +12,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { parseFile } from "../utils/fileParser.js";
 import { generateQuestions } from "../services/questionService.js";
+import { updateProgress } from "../utils/progressTracker.js";
 import Upload from "../models/Upload.js";
 import User from "../models/User.js";
 
@@ -65,12 +66,14 @@ export const uploadFile = async (req, res) => {
       questionType = "multiple-choice",
       difficulty = "medium",
       numQuestions = 5,
+      progressId,
     } = req.body;
 
     // Get file extension
     const fileExt = path.extname(req.file.originalname).toLowerCase().slice(1);
 
     // Create upload record in database
+    // Let MongoDB auto-generate _id naturally
     const upload = await Upload.create({
       user: req.user._id,
       filename: req.file.filename,
@@ -85,9 +88,23 @@ export const uploadFile = async (req, res) => {
       status: "processing",
     });
 
+    const progressKey = progressId || upload._id.toString();
+
+    // Track progress for this upload
+    updateProgress(
+      progressKey,
+      "extracting",
+      10,
+      "Extracting text from document...",
+    );
+
     // Step 1: Extract text from the uploaded file
     console.log("Extracting text from file...");
-    const extractedText = await parseFile(req.file.path, req.file.mimetype);
+    const extractedText = await parseFile(
+      req.file.path,
+      req.file.mimetype,
+      progressKey,
+    );
 
     if (!extractedText || extractedText.trim().length === 0) {
       // Update upload status
@@ -96,6 +113,13 @@ export const uploadFile = async (req, res) => {
 
       // Clean up the uploaded file
       fs.unlinkSync(req.file.path);
+
+      updateProgress(
+        progressKey,
+        "failed",
+        0,
+        "Failed to extract text from document.",
+      );
 
       return res.status(400).json({
         status: "error",
@@ -109,6 +133,9 @@ export const uploadFile = async (req, res) => {
     // Update text length
     upload.textLength = extractedText.length;
     await upload.save();
+
+    // Update progress: now generating questions
+    updateProgress(progressKey, "generating", 70, "Generating AI questions...");
 
     // Step 2: Generate questions using AI
     console.log("Generating questions using AI...");
@@ -124,6 +151,9 @@ export const uploadFile = async (req, res) => {
       JSON.stringify(questions[0], null, 2),
     );
 
+    // Update progress: saving
+    updateProgress(progressKey, "saving", 85, "Saving questions...");
+
     // Step 3: Save questions to database
     upload.questions = questions;
     upload.status = "completed";
@@ -131,6 +161,14 @@ export const uploadFile = async (req, res) => {
     console.log("Saving upload with questions...");
     await upload.save();
     console.log("Upload saved successfully");
+
+    // Mark as completed
+    updateProgress(
+      progressKey,
+      "completed",
+      100,
+      "Questions generated successfully!",
+    );
 
     // Step 4: Update user stats
     await User.findByIdAndUpdate(req.user._id, {
@@ -146,6 +184,7 @@ export const uploadFile = async (req, res) => {
       message: "Questions generated successfully",
       data: {
         uploadId: upload._id,
+        progressId: progressKey,
         filename: req.file.originalname,
         textLength: extractedText.length,
         questions: questions,
@@ -166,23 +205,29 @@ export const uploadFile = async (req, res) => {
       fs.unlinkSync(req.file.path);
     }
 
-    // Provide more detailed error information
-    let errorMessage = "Failed to process file";
-    let errorDetails = error.message;
-
-    // Identify the type of error
-    if (error.message.includes("extract text")) {
-      errorMessage = "Failed to extract text from file";
-    } else if (error.message.includes("Gemini API")) {
-      errorMessage = "AI service error - unable to generate questions";
-    } else if (error.message.includes("parse")) {
-      errorMessage = "Failed to parse AI response";
+    // Mark as failed in progress tracker
+    try {
+      const fallbackProgressId =
+        req.body.progressId || req.body.uploadId || "unknown";
+      updateProgress(
+        fallbackProgressId,
+        "failed",
+        0,
+        `Error: ${error.message}`,
+      );
+    } catch (progressError) {
+      // Ignore progress tracking errors
     }
 
-    res.status(500).json({
+    const statusCode = error.status || 500;
+    const errorCode = error.code || "UPLOAD_PROCESSING_FAILED";
+
+    res.status(statusCode).json({
       status: "error",
-      message: errorMessage,
-      error: errorDetails,
+      code: errorCode,
+      message: error.message || "Failed to process file",
+      error: error.message,
+      detailsPayload: error.details,
       details: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }

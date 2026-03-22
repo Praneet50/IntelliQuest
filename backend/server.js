@@ -11,12 +11,8 @@ import dotenv from "dotenv";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { execSync } from "child_process";
 import { fileURLToPath } from "url";
-
-// Promisify exec for async/await usage
-const execAsync = promisify(exec);
 
 // Import database connection
 import connectDB from "./config/database.js";
@@ -32,23 +28,77 @@ import { getProgress, startCleanupInterval } from "./utils/progressTracker.js";
 dotenv.config();
 
 // ============================================
-// CONFIGURE PATH FOR OCR DEPENDENCIES (WINDOWS)
-// ============================================
-// Add Ghostscript and GraphicsMagick to PATH so Node.js can find them
-const ghostscriptBinPath = "C:\\Program Files\\gs\\gs10.07.0\\bin";
-const graphicsmagickPath = "C:\\Program Files\\GraphicsMagick-1.3.46-Q16";
-
-if (process.env.PATH) {
-  process.env.PATH = `${ghostscriptBinPath};${graphicsmagickPath};${process.env.PATH}`;
-} else {
-  process.env.PATH = `${ghostscriptBinPath};${graphicsmagickPath}`;
-}
-
-console.log("✓ Added OCR dependency paths to NODE process.env.PATH");
-
-// ============================================
 // OCR DEPENDENCY CHECK FUNCTION
 // ============================================
+function runVersionCheck(commandPath) {
+  const quotedPath = commandPath.includes(" ")
+    ? `"${commandPath}"`
+    : commandPath;
+
+  return execSync(`${quotedPath} --version`, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  }).trim();
+}
+
+/**
+ * Cross-platform Ghostscript dependency check.
+ * - Windows: tries configured path, default installed path, then PATH command
+ * - Linux/Docker: uses `gs` command
+ *
+ * @returns {true}
+ * @throws {Error} when Ghostscript is not found
+ */
+function checkGhostscript() {
+  const isWindows = process.platform === "win32";
+  const candidates = isWindows
+    ? [
+        process.env.GHOSTSCRIPT_PATH,
+        "C:\\Program Files\\gs\\gs10.07.0\\bin\\gswin64c.exe",
+        "gswin64c.exe",
+      ]
+    : [process.env.GHOSTSCRIPT_PATH, "gs"];
+
+  for (const candidate of candidates.filter(Boolean)) {
+    try {
+      runVersionCheck(candidate);
+      console.log("Ghostscript found");
+      return true;
+    } catch {
+      // Try next candidate
+    }
+  }
+
+  throw new Error("Ghostscript not found");
+}
+
+function checkGraphicsMagick() {
+  const isWindows = process.platform === "win32";
+  const commandCandidates = isWindows
+    ? [
+        '"C:\\Program Files\\GraphicsMagick-1.3.46-Q16\\gm.exe" -version',
+        "gm.exe -version",
+      ]
+    : ["gm version", "gm -version"];
+
+  for (const candidate of commandCandidates) {
+    try {
+      execSync(candidate, {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+      console.log("GraphicsMagick found");
+      return true;
+    } catch {
+      // Try next candidate
+    }
+  }
+
+  throw new Error("GraphicsMagick not found");
+}
+
 /**
  * Check if required OCR dependencies are installed and accessible
  *
@@ -57,31 +107,11 @@ console.log("✓ Added OCR dependency paths to NODE process.env.PATH");
  */
 async function checkOCRDependencies() {
   try {
-    // Check Ghostscript first
     console.log("Checking Ghostscript availability...");
-    try {
-      const { stdout: gsVersion } = await execAsync("gswin64c -version");
-      console.log("✓ Ghostscript detected");
-      console.log(`  Version: ${gsVersion.split("\n")[0]}`);
-    } catch (gsError) {
-      throw new Error(
-        "Ghostscript not found. Install Ghostscript from https://www.ghostscript.com/download/gsdnld.html " +
-          'and ensure it\'s in PATH or at "C:\\Program Files\\gs\\gs10.07.0\\bin"',
-      );
-    }
+    checkGhostscript();
 
-    // Check GraphicsMagick
     console.log("Checking GraphicsMagick availability...");
-    try {
-      const { stdout: gmVersion } = await execAsync("gm.exe -version");
-      console.log("✓ GraphicsMagick detected");
-      console.log(`  Version: ${gmVersion.split("\n")[0]}`);
-    } catch (gmError) {
-      throw new Error(
-        "GraphicsMagick not found. Install GraphicsMagick from http://www.graphicsmagick.org/download.html " +
-          'and ensure it\'s in PATH or at "C:\\Program Files\\GraphicsMagick-1.3.46-Q16"',
-      );
-    }
+    checkGraphicsMagick();
 
     console.log("✓ All OCR dependencies are available\n");
     return true;

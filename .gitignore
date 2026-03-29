@@ -50,3 +50,9 @@ coverage/
 
 # OS
 Thumbs.db
+
+# Deployment & secrets
+DEPLOY_RENDER.md
+.env.production
+backend/.env.production
+frontend/IntelliQuest/.env.production

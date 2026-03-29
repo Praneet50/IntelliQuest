@@ -38,6 +38,7 @@ const HistoryItem = ({
             <span className="loading loading-spinner loading-xs" />
           ) : (
             <svg
+              aria-hidden="true"
               className="w-4 h-4"
               fill="none"
               stroke="currentColor"
@@ -64,6 +65,7 @@ const HistoryItem = ({
             <span className="loading loading-spinner loading-xs" />
           ) : (
             <svg
+              aria-hidden="true"
               className="w-4 h-4"
               fill="none"
               stroke="currentColor"

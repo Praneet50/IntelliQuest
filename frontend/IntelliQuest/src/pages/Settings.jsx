@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { updateProfile, changePassword } from "../services/api";
+import { updateProfile, changePassword, getProfile } from "../services/api";
 import MainLayout from "../components/layout/MainLayout";
+import CustomSelect from "../components/common/CustomSelect";
 
 const Settings = () => {
   const { user, setUser } = useAuth();
@@ -26,9 +27,6 @@ const Settings = () => {
   const [passwordMessage, setPasswordMessage] = useState("");
 
   // Preferences
-  const [autoSave, setAutoSave] = useState(
-    localStorage.getItem("autoSave") === "true",
-  );
   const [defaultQuestionType, setDefaultQuestionType] = useState(
     localStorage.getItem("defaultQuestionType") || "multiple-choice",
   );
@@ -38,6 +36,21 @@ const Settings = () => {
   const [defaultNumQuestions, setDefaultNumQuestions] = useState(
     parseInt(localStorage.getItem("defaultNumQuestions")) || 5,
   );
+
+  useEffect(() => {
+    const refreshProfileStats = async () => {
+      try {
+        const response = await getProfile();
+        if (response?.status === "success" && response?.data?.user) {
+          setUser(response.data.user);
+        }
+      } catch (error) {
+        console.error("Failed to refresh profile stats:", error);
+      }
+    };
+
+    refreshProfileStats();
+  }, [setUser]);
 
   // Update profile handler
   const handleUpdateProfile = async (e) => {
@@ -95,7 +108,6 @@ const Settings = () => {
 
   // Save preferences
   const handleSavePreferences = () => {
-    localStorage.setItem("autoSave", autoSave);
     localStorage.setItem("defaultQuestionType", defaultQuestionType);
     localStorage.setItem("defaultDifficulty", defaultDifficulty);
     localStorage.setItem("defaultNumQuestions", defaultNumQuestions);
@@ -315,79 +327,45 @@ const Settings = () => {
               <span>⚙️</span> Preferences
             </h2>
             <div className="space-y-4">
-              {/* Auto Save */}
-              <div className="form-control">
-                <label className="label cursor-pointer justify-start gap-4">
-                  <input
-                    type="checkbox"
-                    checked={autoSave}
-                    onChange={(e) => setAutoSave(e.target.checked)}
-                    className="checkbox checkbox-primary"
-                  />
-                  <div>
-                    <span className="label-text font-semibold">
-                      Auto-save generated questions
-                    </span>
-                    <p className="text-xs opacity-70">
-                      Automatically save questions to history
-                    </p>
-                  </div>
-                </label>
-              </div>
-
               {/* Default Question Settings */}
               <div className="divider">Default Question Settings</div>
 
               <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Default Question Type</span>
-                </label>
-                <select
+                <CustomSelect
+                  label="Default Question Type"
                   value={defaultQuestionType}
-                  onChange={(e) => setDefaultQuestionType(e.target.value)}
-                  className="select select-bordered"
-                >
-                  <option value="multiple-choice">Multiple Choice</option>
-                  <option value="true-false">True/False</option>
-                  <option value="short-answer">Short Answer</option>
-                </select>
+                  onChange={(value) => setDefaultQuestionType(value)}
+                  options={[
+                    { value: "multiple-choice", label: "Multiple Choice" },
+                    { value: "true-false", label: "True/False" },
+                    { value: "short-answer", label: "Short Answer" },
+                  ]}
+                />
               </div>
 
               <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Default Difficulty</span>
-                </label>
-                <select
+                <CustomSelect
+                  label="Default Difficulty"
                   value={defaultDifficulty}
-                  onChange={(e) => setDefaultDifficulty(e.target.value)}
-                  className="select select-bordered"
-                >
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
-                </select>
+                  onChange={(value) => setDefaultDifficulty(value)}
+                  options={[
+                    { value: "easy", label: "Easy" },
+                    { value: "medium", label: "Medium" },
+                    { value: "hard", label: "Hard" },
+                  ]}
+                />
               </div>
 
               <div className="form-control">
-                <label className="label">
-                  <span className="label-text">
-                    Default Number of Questions
-                  </span>
-                </label>
-                <select
+                <CustomSelect
+                  label="Default Number of Questions"
                   value={defaultNumQuestions}
-                  onChange={(e) =>
-                    setDefaultNumQuestions(parseInt(e.target.value))
-                  }
-                  className="select select-bordered"
-                >
-                  <option value="3">3 Questions</option>
-                  <option value="5">5 Questions</option>
-                  <option value="7">7 Questions</option>
-                  <option value="10">10 Questions</option>
-                  <option value="15">15 Questions</option>
-                  <option value="20">20 Questions</option>
-                </select>
+                  onChange={(value) => setDefaultNumQuestions(Number(value))}
+                  options={[3, 5, 7, 10, 15, 20].map((num) => ({
+                    value: num,
+                    label: `${num} Questions`,
+                  }))}
+                />
               </div>
 
               <div
@@ -413,28 +391,42 @@ const Settings = () => {
             <h2 className="card-title flex items-center gap-2">
               <span>📊</span> Account Statistics
             </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="stat bg-base-300 rounded-lg">
-                <div className="stat-title">Total Uploads</div>
-                <div className="stat-value text-primary">
-                  {user?.stats?.totalFiles || 0}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="stat bg-base-300 rounded-lg min-w-0">
+                <div className="stat-title whitespace-normal leading-tight min-h-[2.5rem]">
+                  Total Uploads
+                </div>
+                <div className="stat-value text-primary text-3xl break-words">
+                  {Math.max(
+                    0,
+                    user?.uploadCount ?? user?.stats?.totalFiles ?? 0,
+                  )}
                 </div>
               </div>
-              <div className="stat bg-base-300 rounded-lg">
-                <div className="stat-title">Questions Generated</div>
-                <div className="stat-value text-secondary">
-                  {user?.stats?.totalQuestions || 0}
+              <div className="stat bg-base-300 rounded-lg min-w-0">
+                <div className="stat-title whitespace-normal leading-tight min-h-[2.5rem]">
+                  Questions Generated
+                </div>
+                <div className="stat-value text-secondary text-3xl break-words">
+                  {Math.max(
+                    0,
+                    user?.questionCount ?? user?.stats?.totalQuestions ?? 0,
+                  )}
                 </div>
               </div>
-              <div className="stat bg-base-300 rounded-lg">
-                <div className="stat-title">Account Type</div>
-                <div className="stat-value text-sm">
+              <div className="stat bg-base-300 rounded-lg min-w-0">
+                <div className="stat-title whitespace-normal leading-tight min-h-[2.5rem]">
+                  Account Type
+                </div>
+                <div className="stat-value text-sm break-words">
                   {user?.role === "premium" ? "Premium" : "Free"}
                 </div>
               </div>
-              <div className="stat bg-base-300 rounded-lg">
-                <div className="stat-title">Member Since</div>
-                <div className="stat-value text-sm">
+              <div className="stat bg-base-300 rounded-lg min-w-0">
+                <div className="stat-title whitespace-normal leading-tight min-h-[2.5rem]">
+                  Member Since
+                </div>
+                <div className="stat-value text-sm break-words">
                   {user?.createdAt
                     ? new Date(user.createdAt).toLocaleDateString()
                     : "N/A"}

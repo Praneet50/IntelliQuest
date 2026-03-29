@@ -67,4 +67,10 @@ src/
 
 ## Environment Variables
 
-No environment variables needed for the frontend. Backend API runs on `http://localhost:5001` by default.
+Frontend supports an optional API base URL override:
+
+```env
+VITE_API_BASE_URL=http://localhost:5001
+```
+
+If not set, the app defaults to `http://localhost:5001`.

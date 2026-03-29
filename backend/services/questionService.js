@@ -1,9 +1,26 @@
 /**
  * Question Service Module
  *
- * This module handles AI-powered question generation using Google Gemini API
+ * This module handles AI-powered question generation using LangChain + Google Gemini
  * Supports various question types and difficulty levels
  */
+
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+
+const BLOOM_LEVELS_BY_DIFFICULTY = {
+  easy: ["Remember", "Understand"],
+  medium: ["Apply", "Analyze"],
+  hard: ["Evaluate", "Create"],
+};
+
+const ALL_BLOOM_LEVELS = [
+  "Remember",
+  "Understand",
+  "Apply",
+  "Analyze",
+  "Evaluate",
+  "Create",
+];
 
 class QuestionServiceError extends Error {
   constructor(code, message, status = 500, details) {
@@ -30,6 +47,7 @@ export async function generateQuestions(text, options = {}) {
     questionType = "multiple-choice",
     difficulty = "medium",
     numQuestions = 5,
+    courseOutcomes = [],
   } = options;
   const allowMockQuestions = process.env.ALLOW_MOCK_QUESTIONS === "true";
 
@@ -52,6 +70,7 @@ export async function generateQuestions(text, options = {}) {
           questionType,
           difficulty,
           numQuestions,
+          courseOutcomes,
         );
       }
 
@@ -77,6 +96,7 @@ export async function generateQuestions(text, options = {}) {
         questionType,
         difficulty,
         numQuestions,
+        courseOutcomes,
       );
     }
 
@@ -96,89 +116,95 @@ export async function generateQuestions(text, options = {}) {
  * @returns {Promise<Array>} - Generated questions
  */
 async function callGeminiAPI(text, options) {
-  // Use REST API directly
-  const modelName = process.env.GEMINI_MODEL || "models/gemini-2.5-flash";
+  // Use LangChain with Gemini instead of direct REST calls.
+  const rawModelName = process.env.GEMINI_MODEL || "models/gemini-2.5-flash";
+  const modelName = rawModelName.replace(/^models\//, "");
   const apiKey = process.env.GEMINI_API_KEY;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${apiKey}`;
 
-  console.log(`Calling Gemini API with model: ${modelName}`);
+  console.log(`Calling Gemini via LangChain with model: ${modelName}`);
+
+  const llm = new ChatGoogleGenerativeAI({
+    apiKey,
+    model: modelName,
+    temperature: 0.3,
+    topK: 20,
+    topP: 0.8,
+    maxOutputTokens: 4096,
+    // Helps Gemini return JSON-shaped output for parsing.
+    modelKwargs: {
+      responseMimeType: "application/json",
+    },
+  });
 
   const requestGemini = async (prompt) => {
-    const requestBody = {
-      contents: [
-        {
-          parts: [
-            {
-              text: prompt,
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.3,
-        topK: 20,
-        topP: 0.8,
-        maxOutputTokens: 4096,
-        responseMimeType: "application/json",
-      },
-    };
+    try {
+      const response = await llm.invoke(prompt);
+      const responseContent = response?.content;
+      const generatedText = Array.isArray(responseContent)
+        ? responseContent
+            .map((part) =>
+              typeof part === "string" ? part : (part?.text ?? ""),
+            )
+            .join("\n")
+            .trim()
+        : String(responseContent ?? "").trim();
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
+      const finishReason =
+        response?.response_metadata?.finishReason ||
+        response?.response_metadata?.finish_reason;
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error("Gemini API error response:", errorData);
+      console.log(
+        "Gemini LangChain response metadata:",
+        JSON.stringify(response?.response_metadata || {}, null, 2),
+      );
 
-      if (response.status === 429) {
+      if (!generatedText) {
+        throw new Error("No text generated from Gemini via LangChain");
+      }
+
+      return {
+        generatedText,
+        finishReason,
+      };
+    } catch (error) {
+      const rawError =
+        error?.response?.data || error?.message || String(error || "");
+      const status = error?.response?.status || error?.status;
+      const errorText = String(rawError);
+
+      console.error("Gemini LangChain error response:", errorText);
+
+      if (
+        status === 429 ||
+        /429|rate limit|resource has been exhausted/i.test(errorText)
+      ) {
         throw new QuestionServiceError(
           "AI_RATE_LIMIT",
           "AI API rate limit reached. Please wait a moment and try again.",
           429,
-          { provider: "gemini", raw: errorData },
+          { provider: "gemini", raw: errorText },
         );
       }
 
-      if (response.status === 403) {
+      if (
+        status === 403 ||
+        /403|quota|billing|permission denied|PERMISSION_DENIED/i.test(errorText)
+      ) {
         throw new QuestionServiceError(
           "AI_QUOTA_EXCEEDED",
           "AI API quota exceeded or billing limit reached. Please check your Gemini plan and quota.",
           429,
-          { provider: "gemini", raw: errorData },
+          { provider: "gemini", raw: errorText },
         );
       }
 
       throw new QuestionServiceError(
         "AI_PROVIDER_ERROR",
-        `Gemini API error (${response.status}). Please try again later.`,
+        "Gemini API error. Please try again later.",
         502,
-        { provider: "gemini", status: response.status, raw: errorData },
+        { provider: "gemini", status, raw: errorText },
       );
     }
-
-    const data = await response.json();
-    console.log("Gemini API response:", JSON.stringify(data, null, 2));
-
-    const candidate = data.candidates?.[0];
-    const generatedText = candidate?.content?.parts?.[0]?.text;
-
-    if (!generatedText) {
-      console.error(
-        "No text in response. Full response:",
-        JSON.stringify(data),
-      );
-      throw new Error("No text generated from Gemini API");
-    }
-
-    return {
-      generatedText,
-      finishReason: candidate?.finishReason,
-    };
   };
 
   const primaryPrompt = buildPromptForLLM(text, options, {
@@ -213,7 +239,7 @@ async function callGeminiAPI(text, options) {
   );
 
   // Parse and return the questions
-  return parseAIResponse(result.generatedText);
+  return parseAIResponse(result.generatedText, options);
 }
 
 /**
@@ -261,15 +287,37 @@ export function getRepresentativeText(text) {
  * @returns {string} - Formatted prompt
  */
 function buildPromptForLLM(text, options, promptOptions = {}) {
-  const { questionType, difficulty, numQuestions } = options;
+  const {
+    questionType,
+    difficulty,
+    numQuestions,
+    courseOutcomes = [],
+  } = options;
   const { concise = false } = promptOptions;
   const sourceText = getRepresentativeText(text);
+  const allowedBloomLevels = getBloomLevelsForDifficulty(difficulty);
+  const bloomInstruction = `Also classify each question using Bloom's Taxonomy. Allowed levels: ${allowedBloomLevels.join(", ")}. Restrict generated questions to only these Bloom levels. Ensure each question includes a \"bloomLevel\" field.`;
+  const hasCourseOutcomes =
+    Array.isArray(courseOutcomes) && courseOutcomes.length > 0;
+  const courseOutcomeLines = hasCourseOutcomes
+    ? courseOutcomes
+        .map(
+          (courseOutcome) =>
+            `${courseOutcome.id}: ${courseOutcome.description}`,
+        )
+        .join("\n")
+    : "";
+  const courseOutcomeInstruction = hasCourseOutcomes
+    ? `Also map each question to the most relevant Course Outcome (CO).\n\nCourse Outcomes:\n${courseOutcomeLines}\n\nRules:\n- Select exactly one CO per question\n- Match based on meaning, not keywords\n- Ensure each question includes a \"courseOutcome\" field using one of these IDs: ${courseOutcomes
+        .map((courseOutcome) => courseOutcome.id)
+        .join(", ")}.`
+    : "";
   const explanationInstruction = concise
     ? "Keep explanations extremely short, with no more than one sentence each."
     : "Keep explanations brief and directly tied to the source text.";
 
   const promptTemplates = {
-    "multiple-choice": `Generate ${numQuestions} multiple-choice questions based on the following text. Each question should have 4 options (A, B, C, D) with one correct answer. Difficulty level: ${difficulty}. ${explanationInstruction}
+    "multiple-choice": `Generate ${numQuestions} multiple-choice questions based on the following text. Each question should have 4 options (A, B, C, D) with one correct answer. Difficulty level: ${difficulty}. ${explanationInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
 
 IMPORTANT: Return ONLY a valid JSON array. Do not include any markdown formatting, code blocks, or explanatory text. Use double quotes for all strings.
 
@@ -277,6 +325,8 @@ Format your response exactly like this:
 [
   {
     "question": "Question text here?",
+    "bloomLevel": "${allowedBloomLevels[0]}",
+    "courseOutcome": "${hasCourseOutcomes ? courseOutcomes[0].id : "CO1"}",
     "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
     "correctAnswer": "A",
     "explanation": "Brief explanation of why this is correct"
@@ -286,7 +336,7 @@ Format your response exactly like this:
 Text content:
 ${sourceText}`,
 
-    "true-false": `Generate ${numQuestions} true/false questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction}
+    "true-false": `Generate ${numQuestions} true/false questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
 
 IMPORTANT: Return ONLY a valid JSON array. Do not include any markdown formatting, code blocks, or explanatory text. Use double quotes for all strings.
 
@@ -294,6 +344,8 @@ Format your response exactly like this:
 [
   {
     "question": "Statement here",
+    "bloomLevel": "${allowedBloomLevels[0]}",
+    "courseOutcome": "${hasCourseOutcomes ? courseOutcomes[0].id : "CO1"}",
     "correctAnswer": true,
     "explanation": "Explanation of the answer"
   }
@@ -302,7 +354,7 @@ Format your response exactly like this:
 Text content:
 ${sourceText}`,
 
-    "short-answer": `Generate ${numQuestions} short-answer questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction}
+    "short-answer": `Generate ${numQuestions} short-answer questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
 
 IMPORTANT: Return ONLY a valid JSON array. Do not include any markdown formatting, code blocks, or explanatory text. Use double quotes for all strings.
 
@@ -310,6 +362,8 @@ Format your response exactly like this:
 [
   {
     "question": "Question text here?",
+    "bloomLevel": "${allowedBloomLevels[0]}",
+    "courseOutcome": "${hasCourseOutcomes ? courseOutcomes[0].id : "CO1"}",
     "sampleAnswer": "A good sample answer",
     "keyPoints": ["Key point 1", "Key point 2"]
   }
@@ -318,7 +372,7 @@ Format your response exactly like this:
 Text content:
 ${sourceText}`,
 
-    essay: `Generate ${numQuestions} essay questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction}
+    essay: `Generate ${numQuestions} essay questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
 
 IMPORTANT: Return ONLY a valid JSON array. Do not include any markdown formatting, code blocks, or explanatory text. Use double quotes for all strings.
 
@@ -326,6 +380,8 @@ Format your response exactly like this:
 [
   {
     "question": "Essay prompt here",
+    "bloomLevel": "${allowedBloomLevels[0]}",
+    "courseOutcome": "${hasCourseOutcomes ? courseOutcomes[0].id : "CO1"}",
     "guidelines": "What should be included in a good response",
     "suggestedLength": "Approximate word count"
   }
@@ -344,7 +400,9 @@ ${sourceText}`,
  * Handles various response formats from different LLM providers
  *
  * @param {string} responseText - Raw AI response
- * @param {string} questionType - Type of questions
+ * @param {Object} options - Parsing options
+ * @param {string} options.difficulty - Difficulty used for Bloom-level validation
+ * @param {Array} options.courseOutcomes - Course outcome list for CO validation
  * @returns {Array} - Parsed questions
  */
 /**
@@ -374,25 +432,86 @@ function cleanAnswerText(answer) {
   return match ? match[1] : answer.replace(/[.)\\s]+$/, "").trim();
 }
 
+function getBloomLevelsForDifficulty(difficulty = "medium") {
+  return (
+    BLOOM_LEVELS_BY_DIFFICULTY[difficulty] || BLOOM_LEVELS_BY_DIFFICULTY.medium
+  );
+}
+
+function normalizeBloomLevel(rawLevel) {
+  const normalized = String(rawLevel || "")
+    .trim()
+    .toLowerCase();
+  return (
+    ALL_BLOOM_LEVELS.find((level) => level.toLowerCase() === normalized) || null
+  );
+}
+
+function normalizeCourseOutcomeId(rawCourseOutcomeId, allowedCourseOutcomeIds) {
+  const normalized = String(rawCourseOutcomeId || "")
+    .trim()
+    .toUpperCase();
+  return allowedCourseOutcomeIds.includes(normalized) ? normalized : null;
+}
+
 /**
  * Recursively clean all options and answers in questions
  *
  * @param {Array} questions - Array of question objects
  * @returns {Array} - Questions with cleaned options and answers
  */
-function cleanQuestions(questions) {
-  return questions.map((q) => ({
-    ...q,
-    options: q.options
-      ? q.options.map((opt) => cleanOptionText(opt))
-      : q.options,
-    correctAnswer: q.correctAnswer
-      ? cleanAnswerText(q.correctAnswer)
-      : q.correctAnswer,
-  }));
+function cleanQuestions(
+  questions,
+  difficulty = "medium",
+  allowedCourseOutcomeIds = [],
+) {
+  const allowedLevels = getBloomLevelsForDifficulty(difficulty);
+
+  return questions.map((q, index) => {
+    const normalizedBloomLevel = normalizeBloomLevel(q?.bloomLevel);
+    const bloomLevel = allowedLevels.includes(normalizedBloomLevel)
+      ? normalizedBloomLevel
+      : allowedLevels[index % allowedLevels.length];
+    const normalizedCourseOutcomeId = normalizeCourseOutcomeId(
+      q?.courseOutcome,
+      allowedCourseOutcomeIds,
+    );
+    const fallbackCourseOutcomeId = allowedCourseOutcomeIds.length
+      ? allowedCourseOutcomeIds[index % allowedCourseOutcomeIds.length]
+      : undefined;
+    const rawCourseOutcome = q?.courseOutcome
+      ? String(q.courseOutcome).trim().toUpperCase()
+      : q?.courseOutcome;
+    const courseOutcome = allowedCourseOutcomeIds.length
+      ? normalizedCourseOutcomeId || fallbackCourseOutcomeId
+      : rawCourseOutcome;
+
+    return {
+      ...q,
+      bloomLevel,
+      courseOutcome,
+      options: q.options
+        ? q.options.map((opt) => cleanOptionText(opt))
+        : q.options,
+      correctAnswer: q.correctAnswer
+        ? cleanAnswerText(q.correctAnswer)
+        : q.correctAnswer,
+    };
+  });
 }
 
-function parseAIResponse(responseText, questionType) {
+function parseAIResponse(responseText, options = {}) {
+  const { difficulty = "medium", courseOutcomes = [] } = options;
+  const allowedCourseOutcomeIds = (
+    Array.isArray(courseOutcomes) ? courseOutcomes : []
+  )
+    .map((courseOutcome) =>
+      String(courseOutcome?.id || "")
+        .trim()
+        .toUpperCase(),
+    )
+    .filter(Boolean);
+
   try {
     console.log("Parsing AI response. Length:", responseText.length);
     console.log("First 500 chars:", responseText.substring(0, 500));
@@ -415,7 +534,7 @@ function parseAIResponse(responseText, questionType) {
         const parsed = JSON.parse(jsonText);
         if (Array.isArray(parsed) && parsed.length > 0) {
           console.log(`Successfully parsed ${parsed.length} questions`);
-          return cleanQuestions(parsed);
+          return cleanQuestions(parsed, difficulty, allowedCourseOutcomeIds);
         }
       } catch (firstError) {
         console.log(
@@ -433,7 +552,11 @@ function parseAIResponse(responseText, questionType) {
             console.log(
               `Successfully evaluated ${evaluatedArray.length} questions from JS literals`,
             );
-            return cleanQuestions(evaluatedArray);
+            return cleanQuestions(
+              evaluatedArray,
+              difficulty,
+              allowedCourseOutcomeIds,
+            );
           }
         } catch (evalError) {
           console.error("Evaluation also failed:", evalError.message);
@@ -449,7 +572,7 @@ function parseAIResponse(responseText, questionType) {
       console.log(
         `Successfully parsed ${parsed.length} questions from direct parse`,
       );
-      return cleanQuestions(parsed);
+      return cleanQuestions(parsed, difficulty, allowedCourseOutcomeIds);
     }
 
     console.error("Response is not an array");
@@ -478,13 +601,35 @@ function parseAIResponse(responseText, questionType) {
  * @param {number} numQuestions - Number of questions
  * @returns {Array} - Mock questions
  */
-function generateMockQuestions(text, questionType, difficulty, numQuestions) {
+function generateMockQuestions(
+  text,
+  questionType,
+  difficulty,
+  numQuestions,
+  providedCourseOutcomes = [],
+) {
   const textPreview = text.substring(0, 100) + "...";
+  const allowedLevels = getBloomLevelsForDifficulty(difficulty);
+  const getFallbackBloomLevel = (index) =>
+    allowedLevels[index % allowedLevels.length];
+  const allowedCourseOutcomeIds = providedCourseOutcomes
+    .map((courseOutcome) =>
+      String(courseOutcome?.id || "")
+        .trim()
+        .toUpperCase(),
+    )
+    .filter(Boolean);
+  const getFallbackCourseOutcomeId = (index) =>
+    allowedCourseOutcomeIds.length
+      ? allowedCourseOutcomeIds[index % allowedCourseOutcomeIds.length]
+      : undefined;
 
   const mockQuestions = {
     "multiple-choice": Array.from({ length: numQuestions }, (_, i) => ({
       id: i + 1,
       question: `Sample multiple-choice question ${i + 1} based on the text: "${textPreview}"`,
+      bloomLevel: getFallbackBloomLevel(i),
+      courseOutcome: getFallbackCourseOutcomeId(i),
       options: [
         "Sample option 1",
         "Sample option 2",
@@ -501,6 +646,8 @@ function generateMockQuestions(text, questionType, difficulty, numQuestions) {
     "true-false": Array.from({ length: numQuestions }, (_, i) => ({
       id: i + 1,
       question: `Sample true/false statement ${i + 1} based on the text`,
+      bloomLevel: getFallbackBloomLevel(i),
+      courseOutcome: getFallbackCourseOutcomeId(i),
       correctAnswer: i % 2 === 0,
       explanation:
         "This is a mock question. Replace with actual AI-generated content.",
@@ -511,6 +658,8 @@ function generateMockQuestions(text, questionType, difficulty, numQuestions) {
     "short-answer": Array.from({ length: numQuestions }, (_, i) => ({
       id: i + 1,
       question: `Sample short-answer question ${i + 1} based on the text?`,
+      bloomLevel: getFallbackBloomLevel(i),
+      courseOutcome: getFallbackCourseOutcomeId(i),
       sampleAnswer:
         "This is a sample answer that demonstrates the expected response.",
       keyPoints: ["Key point 1", "Key point 2", "Key point 3"],
@@ -521,6 +670,8 @@ function generateMockQuestions(text, questionType, difficulty, numQuestions) {
     essay: Array.from({ length: numQuestions }, (_, i) => ({
       id: i + 1,
       question: `Sample essay prompt ${i + 1}: Analyze and discuss the main concepts presented in the text.`,
+      bloomLevel: getFallbackBloomLevel(i),
+      courseOutcome: getFallbackCourseOutcomeId(i),
       guidelines:
         "A good response should include: main themes, supporting evidence, and critical analysis.",
       suggestedLength: "500-750 words",

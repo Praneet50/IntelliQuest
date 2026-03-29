@@ -5,6 +5,7 @@
  */
 
 import User from "../models/User.js";
+import Upload from "../models/Upload.js";
 import { validationResult } from "express-validator";
 
 /**
@@ -145,6 +146,37 @@ export const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
 
+    const [currentUploadCount, questionCountAgg] = await Promise.all([
+      Upload.countDocuments({ user: user._id }),
+      Upload.aggregate([
+        { $match: { user: user._id } },
+        {
+          $project: {
+            questionCount: { $size: { $ifNull: ["$questions", []] } },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalQuestions: { $sum: "$questionCount" },
+          },
+        },
+      ]),
+    ]);
+
+    const currentQuestionCount = questionCountAgg[0]?.totalQuestions || 0;
+
+    // Keep stored counters in sync for future reads.
+    if (
+      user.uploadCount !== currentUploadCount ||
+      user.questionCount !== currentQuestionCount
+    ) {
+      await User.findByIdAndUpdate(user._id, {
+        uploadCount: currentUploadCount,
+        questionCount: currentQuestionCount,
+      });
+    }
+
     res.status(200).json({
       status: "success",
       data: {
@@ -154,8 +186,8 @@ export const getProfile = async (req, res) => {
           email: user.email,
           role: user.role,
           avatar: user.avatar,
-          uploadCount: user.uploadCount,
-          questionCount: user.questionCount,
+          uploadCount: currentUploadCount,
+          questionCount: currentQuestionCount,
           lastLogin: user.lastLogin,
           createdAt: user.createdAt,
         },
@@ -182,25 +214,53 @@ export const updateProfile = async (req, res) => {
 
     const user = await User.findById(req.user.id);
 
-    if (name) user.name = name;
-    if (email && email !== user.email) {
-      // Check if email is already taken
-      const emailExists = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        status: "error",
+        message: "User not found",
+      });
+    }
+
+    const updates = {};
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    const trimmedEmail = typeof email === "string" ? email.trim() : "";
+
+    if (trimmedName) {
+      updates.name = trimmedName;
+    }
+
+    if (trimmedEmail && trimmedEmail !== user.email) {
+      // Check if email is already taken by another account.
+      const emailExists = await User.findOne({
+        email: trimmedEmail,
+        _id: { $ne: user._id },
+      });
       if (emailExists) {
         return res.status(400).json({
           status: "error",
           message: "Email is already in use",
         });
       }
-      user.email = email;
+      updates.email = trimmedEmail;
     }
 
-    await user.save();
+    if (Object.keys(updates).length === 0) {
+      return res.status(200).json({
+        status: "success",
+        message: "No profile changes provided",
+        data: { user },
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(user._id, updates, {
+      new: true,
+      runValidators: true,
+    });
 
     res.status(200).json({
       status: "success",
       message: "Profile updated successfully",
-      data: { user },
+      data: { user: updatedUser },
     });
   } catch (error) {
     console.error("Update profile error:", error);

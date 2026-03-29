@@ -5,7 +5,7 @@ import UserProfile from "./UserProfile";
 
 const Sidebar = () => {
   return (
-    <div className="w-64 bg-base-200 h-screen flex flex-col border-r border-base-300">
+    <div className="w-64 bg-base-200 h-full flex flex-col border-r border-base-300">
       <SidebarHeader />
       <div className="px-4 mb-6">
         <NewSessionButton />

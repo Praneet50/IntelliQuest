@@ -2,12 +2,15 @@ const StepItem = ({ number, label, isActive = false, isCompleted = false }) => {
   return (
     <div className="flex flex-col items-center gap-2">
       <div
+        role="img"
+        aria-label={`Step ${number}: ${label}${isCompleted ? ", completed" : ""}`}
+        aria-current={isActive ? "step" : undefined}
         className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg transition-all ${
           isActive
             ? "bg-primary text-white shadow-lg shadow-primary/50"
             : isCompleted
               ? "bg-primary/30 text-primary"
-              : "bg-gray-700/50 text-gray-500"
+              : "bg-base-300 text-base-content/50"
         }`}
       >
         {isCompleted ? (
@@ -24,7 +27,7 @@ const StepItem = ({ number, label, isActive = false, isCompleted = false }) => {
       </div>
       <span
         className={`text-xs font-medium uppercase tracking-wider ${
-          isActive ? "text-white" : "text-gray-500"
+          isActive ? "text-white" : "text-base-content/50"
         }`}
       >
         {label}

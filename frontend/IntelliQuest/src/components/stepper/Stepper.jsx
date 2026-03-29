@@ -18,7 +18,7 @@ const Stepper = ({ currentStep = 1 }) => {
             isCompleted={currentStep > step.number}
           />
           {index < steps.length - 1 && (
-            <div className="w-24 h-0.5 bg-gray-700 mx-4" />
+            <div className="w-24 h-0.5 bg-base-300 mx-4" />
           )}
         </div>
       ))}

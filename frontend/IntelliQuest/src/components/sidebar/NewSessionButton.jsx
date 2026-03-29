@@ -13,7 +13,7 @@ const NewSessionButton = () => {
   return (
     <button
       onClick={handleNewSession}
-      className="btn btn-outline border-base-300 hover:border-primary hover:bg-primary/10 w-full normal-case rounded-xl gap-2"
+      className="btn btn-outline border-base-300 text-base-content hover:border-primary hover:bg-primary/10 hover:text-primary w-full normal-case rounded-xl gap-2"
     >
       <svg
         className="w-5 h-5"

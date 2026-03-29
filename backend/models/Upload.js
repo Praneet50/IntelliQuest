@@ -17,6 +17,18 @@ const questionSchema = new mongoose.Schema(
     keyPoints: [{ type: String }],
     guidelines: { type: String },
     suggestedLength: { type: String },
+    bloomLevel: {
+      type: String,
+      enum: [
+        "Remember",
+        "Understand",
+        "Apply",
+        "Analyze",
+        "Evaluate",
+        "Create",
+      ],
+    },
+    courseOutcome: { type: String },
     type: { type: String },
     difficulty: { type: String },
   },
@@ -69,6 +81,12 @@ const uploadSchema = new mongoose.Schema(
       type: Number,
       default: 5,
     },
+    courseOutcomes: [
+      {
+        id: { type: String },
+        description: { type: String },
+      },
+    ],
     questions: [questionSchema],
     status: {
       type: String,

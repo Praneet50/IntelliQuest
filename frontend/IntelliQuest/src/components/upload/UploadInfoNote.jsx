@@ -1,9 +1,10 @@
 const UploadInfoNote = () => {
   return (
-    <div className="flex items-start gap-3 bg-darker/50 border border-gray-700/50 rounded-xl p-4 max-w-2xl">
+    <div className="flex items-start gap-3 bg-base-200/50 border border-base-300/50 rounded-xl p-4 max-w-2xl">
       <div className="flex-shrink-0">
         <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
           <svg
+            aria-hidden="true"
             className="w-5 h-5 text-primary"
             fill="currentColor"
             viewBox="0 0 20 20"
@@ -16,7 +17,7 @@ const UploadInfoNote = () => {
           </svg>
         </div>
       </div>
-      <p className="text-sm text-gray-300 italic">
+      <p className="text-sm text-base-content/70 italic">
         "Uploading clear, structured PDFs yields the best question results."
       </p>
     </div>

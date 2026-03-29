@@ -1,295 +1,120 @@
 # IntelliQuest Backend
 
-AI-powered Question Generator API built with Node.js and Express.
+AI-powered Question Generator API built with Node.js, Express, MongoDB, and Gemini.
 
-## 🚀 Features
+## Features
 
-- **File Upload Support**: Accepts PDF, DOCX, and TXT files
-- **Text Extraction**: Automatically extracts text from uploaded documents
-- **Scanned PDF OCR**: Automatic OCR fallback for PDF scans when embedded text is missing
-- **AI Question Generation**: Generate questions using LLM APIs (Gemini, OpenAI, GPT, etc.)
-- **Multiple Question Types**:
-  - Multiple Choice
-  - True/False
-  - Short Answer
-  - Essay
-- **Configurable Difficulty**: Easy, Medium, Hard
-- **OCR Enabled**: Built-in OCR fallback using `pdf2pic` + `tesseract.js`
-- **CORS Enabled**: Ready for React frontend integration
-- **Modular Architecture**: Clean, maintainable code structure
+- File upload support: PDF, DOCX, DOC, TXT
+- Text extraction from uploaded documents
+- OCR fallback for scanned PDFs (pdf2pic + tesseract.js)
+- AI question generation with Gemini via LangChain
+- Question types: multiple-choice, true-false, short-answer, essay
+- Difficulty levels: easy, medium, hard
+- Course Outcome mapping support
+- User authentication with JWT
+- Upload history, rename, and delete endpoints
+- Upload progress tracking endpoint
 
-## 📋 Prerequisites
+## Prerequisites
 
-- Node.js (v18 or higher)
-- npm or yarn
-- API key for your chosen LLM provider (Gemini, OpenAI, etc.)
-- GraphicsMagick (required for PDF OCR)
-- Ghostscript (required for PDF OCR)
+- Node.js 18+
+- npm
+- MongoDB connection string
+- Gemini API key
+- Ghostscript (for OCR)
+- GraphicsMagick (for OCR)
 
-## 🛠️ Installation
+## Installation
 
-1. **Clone the repository and navigate to backend:**
+1. Open backend folder:
 
-   ```bash
-   cd backend
-   ```
+```bash
+cd backend
+```
 
-2. **Install dependencies:**
+2. Install dependencies:
 
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+```
 
-3. **Set up environment variables:**
+3. Create environment file:
 
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+cp .env.example .env
+```
 
-   Edit `.env` and add your API keys:
+4. Fill values in `.env`.
 
-   ```env
-   PORT=5000
-   GEMINI_API_KEY=your_api_key_here
-   FRONTEND_URL=http://localhost:5173
-   ```
+## Environment Variables
 
-# OCR configuration (optional)
+Example values:
 
+```env
+PORT=5001
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,http://localhost:5174
+DATABASE_URL=mongodb+srv://<user>:<password>@<cluster>/<db>
+JWT_SECRET=replace-with-strong-secret
+JWT_EXPIRE=30d
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=models/gemini-2.5-flash
+ALLOW_MOCK_QUESTIONS=false
 ENABLE_PDF_OCR=true
 OCR_LANGUAGE=eng
 OCR_PAGE_LIMIT=20
 PDF_OCR_MIN_TEXT_CHARS=30
+```
 
-````
+## Run
 
-5. **Install OCR system dependencies (for scanned PDFs):**
-
-On Windows, install these tools and ensure they are available on your `PATH`:
-
-- Ghostscript: https://www.ghostscript.com/releases/gsdnld.html
-- GraphicsMagick: http://www.graphicsmagick.org/download.html
-
-6. **Create uploads directory:**
-```bash
-mkdir uploads
-````
-
-## 🚀 Running the Server
-
-**Development mode (with auto-restart):**
+Development:
 
 ```bash
 npm run dev
 ```
 
-**Production mode:**
+Start:
 
 ```bash
 npm start
 ```
 
-The server will start on `http://localhost:5000`
+Default server URL: `http://localhost:5001`
 
-## 📡 API Endpoints
+## Main API Endpoints
 
-### Health Check
+- `GET /health`
+- `POST /upload` (auth required)
+- `GET /upload-progress/:uploadId`
+- `GET /uploads/history` (auth required)
+- `GET /uploads/:id` (auth required)
+- `PATCH /uploads/:id/rename` (auth required)
+- `DELETE /uploads/:id` (auth required)
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/profile` (auth required)
+- `PUT /api/auth/profile` (auth required)
+- `PUT /api/auth/change-password` (auth required)
 
-```http
-GET /health
-```
+## OCR Notes (Windows)
 
-**Response:**
+Install and add to PATH:
 
-```json
-{
-  "status": "success",
-  "message": "Server is running",
-  "timestamp": "2024-03-12T10:30:00.000Z",
-  "uptime": 123.456
-}
-```
+- Ghostscript: https://www.ghostscript.com/releases/gsdnld.html
+- GraphicsMagick: http://www.graphicsmagick.org/download.html
 
-### Upload File and Generate Questions
+## Troubleshooting
 
-```http
-POST /upload
-Content-Type: multipart/form-data
-```
-
-**Request Body:**
-
-- `file`: File to upload (PDF, DOCX, or TXT)
-- `questionType`: (optional) "multiple-choice", "true-false", "short-answer", "essay"
-- `difficulty`: (optional) "easy", "medium", "hard"
-- `numQuestions`: (optional) Number of questions (1-50)
-
-**Example using cURL:**
+Port already in use on Windows:
 
 ```bash
-curl -X POST http://localhost:5000/upload \
-  -F "file=@document.pdf" \
-  -F "questionType=multiple-choice" \
-  -F "difficulty=medium" \
-  -F "numQuestions=5"
+netstat -ano | findstr :5001
 ```
 
-**Example Response:**
+If AI generation fails:
 
-```json
-{
-  "status": "success",
-  "message": "Questions generated successfully",
-  "data": {
-    "filename": "document.pdf",
-    "textLength": 2500,
-    "questions": [
-      {
-        "id": 1,
-        "question": "What is the main topic discussed?",
-        "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
-        "correctAnswer": "A",
-        "explanation": "Explanation here"
-      }
-    ],
-    "metadata": {
-      "questionType": "multiple-choice",
-      "difficulty": "medium",
-      "numQuestions": 5
-    }
-  }
-}
-```
-
-### Get Upload History
-
-```http
-GET /uploads/history
-```
-
-### Delete Uploaded File
-
-```http
-DELETE /uploads/:filename
-```
-
-## 🏗️ Project Structure (MVC Pattern)
-
-```
-backend/
-├── server.js                     # Main application entry point
-├── routes/
-│   └── uploadRoutes.js          # Route definitions
-├── controllers/
-│   └── uploadController.js      # Request handlers
-├── services/
-│   └── questionService.js       # AI question generation
-├── utils/
-│   └── fileParser.js            # File parsing utilities
-├── config/
-│   └── config.js                # Configuration management
-├── uploads/                     # Uploaded files storage
-├── package.json                 # Dependencies
-├── .env.example                 # Environment variables template
-└── .gitignore                   # Git ignore rules
-```
-
-## 🔧 Configuration
-
-### Supported AI Providers
-
-The backend is designed to work with multiple LLM providers:
-
-1. **Google Gemini** (Recommended)
-   - Get API key: https://makersuite.google.com/app/apikey
-   - Set `AI_PROVIDER=gemini`
-
-2. **OpenAI GPT**
-   - Get API key: https://platform.openai.com/api-keys
-   - Set `AI_PROVIDER=openai`
-
-3. **Anthropic Claude**
-   - Get API key: https://console.anthropic.com/
-   - Set `AI_PROVIDER=anthropic`
-
-### Implementing LLM Integration
-
-The `services/questionService.js` file contains placeholder functions. To enable AI features:
-
-1. **Install the required package:**
-
-   ```bash
-   # For Google Gemini
-   npm install @google/generative-ai
-
-   # For OpenAI
-   npm install openai
-
-   # For Anthropic
-   npm install @anthropic-ai/sdk
-   ```
-
-2. **Uncomment and implement the API call functions** in `questionService.js`
-
-3. **Add your API key** to the `.env` file
-
-## 🔮 Future Enhancements
-
-- [ ] Implement actual LLM API integration
-- [x] Add OCR support for scanned PDFs
-- [ ] Database integration for storing questions
-- [ ] User authentication and authorization
-- [ ] Question history and favorites
-- [ ] Export questions to various formats
-- [ ] Batch processing for multiple files
-- [ ] Real-time progress updates via WebSocket
-
-## 🧪 Testing
-
-Test the server with example files:
-
-```bash
-# Test with a text file
-curl -X POST http://localhost:5000/upload \
-  -F "file=@test.txt" \
-  -F "numQuestions=3"
-
-# Check server health
-curl http://localhost:5000/health
-```
-
-## 🐛 Troubleshooting
-
-**Port already in use:**
-
-```bash
-# Change PORT in .env file or kill the process
-lsof -ti:5000 | xargs kill -9  # macOS/Linux
-netstat -ano | findstr :5000    # Windows
-```
-
-**File upload errors:**
-
-- Check file size (max 10MB by default)
-- Verify file type is PDF, DOCX, or TXT
-- Ensure uploads/ directory exists and is writable
-
-**Scanned PDF OCR errors:**
-
-- Install Ghostscript and GraphicsMagick
-- Verify both tools are available in your system `PATH`
-- Reduce `OCR_PAGE_LIMIT` for very large scanned files
-
-**AI generation not working:**
-
-- Verify API key is correctly set in .env
-- Check API quota/limits
-- Review console logs for detailed error messages
-
-## 📝 License
-
-ISC
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+- Verify `GEMINI_API_KEY` in `.env`
+- Check Gemini quota and billing
+- Check backend logs for provider errors

@@ -5,6 +5,36 @@ import UploadInfoNote from "./UploadInfoNote";
 import QuestionSettings from "./QuestionSettings";
 import { getUploadProgress, uploadFile } from "../../services/api";
 
+const getDefaultQuestionSettings = () => {
+  const allowedQuestionTypes = [
+    "multiple-choice",
+    "true-false",
+    "short-answer",
+  ];
+  const allowedDifficulties = ["easy", "medium", "hard"];
+  const allowedQuestionCounts = [3, 5, 7, 10, 15, 20];
+
+  const savedQuestionType = localStorage.getItem("defaultQuestionType");
+  const savedDifficulty = localStorage.getItem("defaultDifficulty");
+  const savedNumQuestions = Number(localStorage.getItem("defaultNumQuestions"));
+
+  return {
+    questionType: allowedQuestionTypes.includes(savedQuestionType)
+      ? savedQuestionType
+      : "multiple-choice",
+    difficulty: allowedDifficulties.includes(savedDifficulty)
+      ? savedDifficulty
+      : "medium",
+    numQuestions: allowedQuestionCounts.includes(savedNumQuestions)
+      ? savedNumQuestions
+      : 5,
+    courseOutcomes: [
+      { id: "CO1", description: "" },
+      { id: "CO2", description: "" },
+    ],
+  };
+};
+
 const createProgressId = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -77,11 +107,9 @@ const UploadContainer = ({ onQuestionsGenerated, onUploadComplete }) => {
   const [uploadStatus, setUploadStatus] = useState("Uploading...");
 
   // Question settings state
-  const [questionSettings, setQuestionSettings] = useState({
-    questionType: "multiple-choice",
-    difficulty: "medium",
-    numQuestions: 5,
-  });
+  const [questionSettings, setQuestionSettings] = useState(
+    getDefaultQuestionSettings,
+  );
 
   const handleFileSelect = (file) => {
     setSelectedFile(file);
@@ -154,7 +182,12 @@ const UploadContainer = ({ onQuestionsGenerated, onUploadComplete }) => {
           uploadId: response.data.uploadId,
           filename: selectedFile.name,
           file: selectedFile,
-          settings: questionSettings,
+          settings: {
+            ...questionSettings,
+            courseOutcomes:
+              response.data?.metadata?.courseOutcomes ||
+              questionSettings.courseOutcomes,
+          },
         });
       }
 

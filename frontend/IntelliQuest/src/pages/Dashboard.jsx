@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import Stepper from "../components/stepper/Stepper";
 import UploadContainer from "../components/upload/UploadContainer";
@@ -19,9 +18,9 @@ const Dashboard = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-full flex flex-col">
         {/* Main Content */}
-        <div className="flex-1 flex flex-col justify-center px-8 py-12">
+        <div className="px-8 py-6">
           <Stepper currentStep={generatedQuestions ? 2 : 1} />
 
           {!generatedQuestions ? (
@@ -32,7 +31,7 @@ const Dashboard = () => {
         </div>
 
         {/* Bottom Action Bar */}
-        <div className="border-t border-base-300 bg-base-200 backdrop-blur-sm px-8 py-6">
+        <div className="mt-auto border-t border-base-300 bg-base-200 backdrop-blur-sm px-8 py-6">
           <div className="max-w-4xl mx-auto flex justify-between">
             {generatedQuestions && (
               <button

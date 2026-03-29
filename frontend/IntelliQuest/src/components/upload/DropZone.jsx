@@ -75,12 +75,15 @@ const DropZone = ({ onFileSelect, onError, selectedFile, isUploading }) => {
         className="hidden"
       />
       <div
+        role="region"
+        aria-label="File upload area"
+        aria-describedby="dropzone-description"
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={handleClick}
-        className={`border-2 border-dashed rounded-2xl p-16 text-center transition-all cursor-pointer ${
+        className={`border-2 border-dashed rounded-2xl p-8 md:p-16 text-center transition-all cursor-pointer ${
           isDragging
             ? "border-primary bg-primary/10"
             : selectedFile
@@ -97,6 +100,7 @@ const DropZone = ({ onFileSelect, onError, selectedFile, isUploading }) => {
             }`}
           >
             <svg
+              aria-hidden="true"
               className="w-10 h-10 text-primary"
               fill="none"
               stroke="currentColor"
@@ -109,6 +113,11 @@ const DropZone = ({ onFileSelect, onError, selectedFile, isUploading }) => {
                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
               />
             </svg>
+          </div>
+          <div id="dropzone-description" className="sr-only">
+            {isUploading
+              ? "Uploading file, please wait"
+              : "Upload your documents here. Supports PDF, DOCX, TXT files. Maximum file size: 10MB"}
           </div>
           <div>
             <h3 className="text-xl font-semibold text-base-content mb-2">

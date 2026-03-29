@@ -57,6 +57,12 @@ export const SessionProvider = ({ children }) => {
           uploadId: fullUpload._id,
           filename: fullUpload.originalFilename,
           fileType: fullUpload.fileType,
+          settings: {
+            questionType: fullUpload.questionType,
+            difficulty: fullUpload.difficulty,
+            numQuestions: fullUpload.numQuestions,
+            courseOutcomes: fullUpload.courseOutcomes || [],
+          },
         });
       }
     } catch (error) {

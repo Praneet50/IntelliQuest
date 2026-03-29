@@ -1,22 +1,109 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import QuestionSettings from "./QuestionSettings";
 import { uploadFile } from "../../services/api";
 import { useSession } from "../../context/SessionContext";
+import CustomSelect from "../common/CustomSelect";
+
+const getDefaultQuestionSettings = () => {
+  const allowedQuestionTypes = [
+    "multiple-choice",
+    "true-false",
+    "short-answer",
+  ];
+  const allowedDifficulties = ["easy", "medium", "hard"];
+  const allowedQuestionCounts = [3, 5, 7, 10, 15, 20];
+
+  const savedQuestionType = localStorage.getItem("defaultQuestionType");
+  const savedDifficulty = localStorage.getItem("defaultDifficulty");
+  const savedNumQuestions = Number(localStorage.getItem("defaultNumQuestions"));
+
+  return {
+    questionType: allowedQuestionTypes.includes(savedQuestionType)
+      ? savedQuestionType
+      : "multiple-choice",
+    difficulty: allowedDifficulties.includes(savedDifficulty)
+      ? savedDifficulty
+      : "medium",
+    numQuestions: allowedQuestionCounts.includes(savedNumQuestions)
+      ? savedNumQuestions
+      : 5,
+    courseOutcomes: [
+      { id: "CO1", description: "" },
+      { id: "CO2", description: "" },
+    ],
+  };
+};
+
+const sanitizeFileName = (name) => {
+  const invalidChars = new Set(["<", ">", ":", '"', "/", "\\", "|", "?", "*"]);
+
+  return Array.from(String(name || ""))
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      const isControlChar = code >= 0 && code < 32;
+      return isControlChar || invalidChars.has(char) ? "_" : char;
+    })
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+};
 
 const QuestionDisplay = ({ questions }) => {
   const [showAnswers, setShowAnswers] = useState(false);
   const [showRegenerateSettings, setShowRegenerateSettings] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [editableQuestions, setEditableQuestions] = useState(questions || []);
   const { currentUploadData, currentSession, setQuestions } = useSession();
 
-  const [questionSettings, setQuestionSettings] = useState({
-    questionType: "multiple-choice",
-    difficulty: "medium",
-    numQuestions: 5,
-  });
+  const [questionSettings, setQuestionSettings] = useState(
+    getDefaultQuestionSettings,
+  );
 
-  if (!questions || questions.length === 0) {
+  useEffect(() => {
+    setEditableQuestions(questions || []);
+  }, [questions]);
+
+  useEffect(() => {
+    const incomingSettings = currentUploadData?.settings;
+
+    if (incomingSettings) {
+      setQuestionSettings((prev) => ({
+        ...prev,
+        ...incomingSettings,
+        courseOutcomes:
+          incomingSettings.courseOutcomes || prev.courseOutcomes || [],
+      }));
+    }
+  }, [currentUploadData]);
+
+  const availableCourseOutcomeIds = useMemo(() => {
+    const fromSettings = (questionSettings.courseOutcomes || [])
+      .map((courseOutcome) => courseOutcome?.id)
+      .filter(Boolean);
+
+    if (fromSettings.length > 0) {
+      return fromSettings;
+    }
+
+    const fromSession = (currentSession?.courseOutcomes || [])
+      .map((courseOutcome) => courseOutcome?.id)
+      .filter(Boolean);
+
+    if (fromSession.length > 0) {
+      return fromSession;
+    }
+
+    return Array.from(
+      new Set(
+        (questions || [])
+          .map((question) => question?.courseOutcome)
+          .filter(Boolean),
+      ),
+    );
+  }, [questionSettings.courseOutcomes, currentSession, questions]);
+
+  if (!editableQuestions || editableQuestions.length === 0) {
     return null;
   }
 
@@ -37,7 +124,10 @@ const QuestionDisplay = ({ questions }) => {
         questionSettings,
       );
 
-      setQuestions(response.data.questions, currentUploadData);
+      setQuestions(response.data.questions, {
+        ...currentUploadData,
+        settings: questionSettings,
+      });
       setShowRegenerateSettings(false);
     } catch (err) {
       console.error("Regenerate error:", err);
@@ -83,14 +173,22 @@ const QuestionDisplay = ({ questions }) => {
     writeWrappedText("IntelliQuest - Generated Questions", 16, 7);
     y += 2;
     doc.setFont("helvetica", "normal");
-    writeWrappedText(`Total Questions: ${questions.length}`, 11, 6);
+    writeWrappedText(`Total Questions: ${editableQuestions.length}`, 11, 6);
     y += 4;
 
-    questions.forEach((q, index) => {
+    editableQuestions.forEach((q, index) => {
       ensureSpace(12);
       doc.setFont("helvetica", "bold");
       writeWrappedText(`Question ${index + 1}: ${q.question}`, 12, 6);
       doc.setFont("helvetica", "normal");
+
+      if (q.bloomLevel) {
+        writeWrappedText(`Bloom Level: ${q.bloomLevel}`, 11, 5);
+      }
+
+      if (q.courseOutcome) {
+        writeWrappedText(`Course Outcome: ${q.courseOutcome}`, 11, 5);
+      }
 
       if (q.options && q.options.length > 0) {
         q.options.forEach((option, optIndex) => {
@@ -119,10 +217,7 @@ const QuestionDisplay = ({ questions }) => {
       "generated-questions";
 
     const baseName = rawName.replace(/\.[^/.]+$/, "").trim();
-    const safeName = (baseName || "generated-questions")
-      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-      .replace(/\s+/g, " ")
-      .trim();
+    const safeName = sanitizeFileName(baseName || "generated-questions");
 
     doc.save(`${safeName}.pdf`);
   };
@@ -135,9 +230,9 @@ const QuestionDisplay = ({ questions }) => {
             Generated Questions
           </h2>
           <p className="text-base-content/70">
-            {questions.length}{" "}
-            {questions.length === 1 ? "question" : "questions"} generated from
-            your document
+            {editableQuestions.length}{" "}
+            {editableQuestions.length === 1 ? "question" : "questions"}{" "}
+            generated from your document
           </p>
         </div>
         <div className="flex gap-3">
@@ -225,7 +320,7 @@ const QuestionDisplay = ({ questions }) => {
       )}
 
       <div className="space-y-6">
-        {questions.map((question, index) => (
+        {editableQuestions.map((question, index) => (
           <div
             key={index}
             className="p-6 bg-base-200 border border-base-300 rounded-xl hover:border-base-content/30 transition-colors"
@@ -238,6 +333,51 @@ const QuestionDisplay = ({ questions }) => {
                 <h3 className="text-lg font-semibold text-base-content mb-4">
                   {question.question}
                 </h3>
+
+                {(question.bloomLevel || question.courseOutcome) && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {question.bloomLevel && (
+                      <span className="badge badge-secondary badge-outline">
+                        {question.bloomLevel}
+                      </span>
+                    )}
+                    {question.courseOutcome && (
+                      <span className="badge badge-accent badge-outline">
+                        {question.courseOutcome}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {availableCourseOutcomeIds.length > 0 && (
+                  <div className="mb-4">
+                    <label className="text-xs text-base-content/70 block mb-1">
+                      Course Outcome
+                    </label>
+                    <CustomSelect
+                      className="max-w-[180px]"
+                      value={question.courseOutcome || ""}
+                      onChange={(nextCourseOutcome) => {
+                        setEditableQuestions((prevQuestions) =>
+                          prevQuestions.map((prevQuestion, prevIndex) =>
+                            prevIndex === index
+                              ? {
+                                  ...prevQuestion,
+                                  courseOutcome: nextCourseOutcome,
+                                }
+                              : prevQuestion,
+                          ),
+                        );
+                      }}
+                      options={availableCourseOutcomeIds.map(
+                        (courseOutcomeId) => ({
+                          value: courseOutcomeId,
+                          label: courseOutcomeId,
+                        }),
+                      )}
+                    />
+                  </div>
+                )}
 
                 {question.options && question.options.length > 0 && (
                   <div className="space-y-2 mb-4">

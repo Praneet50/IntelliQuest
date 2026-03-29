@@ -4,7 +4,8 @@
  * Handles all communication with the backend API
  */
 
-const API_BASE_URL = "http://localhost:5001";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
 
 class ApiError extends Error {
   constructor(message, code, status, detailsPayload) {
@@ -50,6 +51,7 @@ export const uploadFile = async (file, options = {}) => {
     difficulty = "medium",
     numQuestions = 5,
     progressId,
+    courseOutcomes = [],
   } = options;
 
   // Create form data
@@ -58,6 +60,7 @@ export const uploadFile = async (file, options = {}) => {
   formData.append("questionType", questionType);
   formData.append("difficulty", difficulty);
   formData.append("numQuestions", numQuestions);
+  formData.append("courseOutcomes", JSON.stringify(courseOutcomes));
   if (progressId) {
     formData.append("progressId", progressId);
   }

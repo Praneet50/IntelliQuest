@@ -21,6 +21,48 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadsDir = path.join(__dirname, "..", "uploads");
 
+const normalizeCourseOutcomes = (rawCourseOutcomes) => {
+  let parsedCourseOutcomes = [];
+
+  if (Array.isArray(rawCourseOutcomes)) {
+    parsedCourseOutcomes = rawCourseOutcomes;
+  } else if (typeof rawCourseOutcomes === "string" && rawCourseOutcomes) {
+    try {
+      const decoded = JSON.parse(rawCourseOutcomes);
+      parsedCourseOutcomes = Array.isArray(decoded) ? decoded : [];
+    } catch {
+      parsedCourseOutcomes = [];
+    }
+  }
+
+  const normalized = parsedCourseOutcomes
+    .map((courseOutcome, index) => {
+      const id = String(courseOutcome?.id || `CO${index + 1}`)
+        .trim()
+        .toUpperCase();
+      const description = String(courseOutcome?.description || "").trim();
+
+      if (!id || !description) {
+        return null;
+      }
+
+      return { id, description };
+    })
+    .filter(Boolean);
+
+  const uniqueById = [];
+  const seenIds = new Set();
+
+  normalized.forEach((courseOutcome) => {
+    if (!seenIds.has(courseOutcome.id)) {
+      seenIds.add(courseOutcome.id);
+      uniqueById.push(courseOutcome);
+    }
+  });
+
+  return uniqueById;
+};
+
 /**
  * Health Check Handler
  * GET /health
@@ -67,7 +109,9 @@ export const uploadFile = async (req, res) => {
       difficulty = "medium",
       numQuestions = 5,
       progressId,
+      courseOutcomes: rawCourseOutcomes,
     } = req.body;
+    const courseOutcomes = normalizeCourseOutcomes(rawCourseOutcomes);
 
     // Get file extension
     const fileExt = path.extname(req.file.originalname).toLowerCase().slice(1);
@@ -84,6 +128,7 @@ export const uploadFile = async (req, res) => {
       questionType,
       difficulty,
       numQuestions: parseInt(numQuestions),
+      courseOutcomes,
       textLength: 0,
       status: "processing",
     });
@@ -143,6 +188,7 @@ export const uploadFile = async (req, res) => {
       questionType,
       difficulty,
       numQuestions: parseInt(numQuestions),
+      courseOutcomes,
     });
 
     console.log(`Generated ${questions.length} questions`);
@@ -192,6 +238,7 @@ export const uploadFile = async (req, res) => {
           questionType,
           difficulty,
           numQuestions: questions.length,
+          courseOutcomes,
         },
       },
     });
@@ -386,12 +433,30 @@ export const deleteFile = async (req, res) => {
     // Delete database record
     await Upload.findByIdAndDelete(req.params.id);
 
-    // Update user stats
+    // Recalculate user stats from actual records to avoid negative drift.
+    const [currentUploadCount, questionCountAgg] = await Promise.all([
+      Upload.countDocuments({ user: req.user._id }),
+      Upload.aggregate([
+        { $match: { user: req.user._id } },
+        {
+          $project: {
+            questionCount: { $size: { $ifNull: ["$questions", []] } },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalQuestions: { $sum: "$questionCount" },
+          },
+        },
+      ]),
+    ]);
+
+    const currentQuestionCount = questionCountAgg[0]?.totalQuestions || 0;
+
     await User.findByIdAndUpdate(req.user._id, {
-      $inc: {
-        uploadCount: -1,
-        questionCount: -upload.questions.length,
-      },
+      uploadCount: currentUploadCount,
+      questionCount: currentQuestionCount,
     });
 
     res.status(200).json({
@@ -399,6 +464,10 @@ export const deleteFile = async (req, res) => {
       message: "Upload deleted successfully",
       data: {
         deletedUploadId: req.params.id,
+        stats: {
+          uploadCount: currentUploadCount,
+          questionCount: currentQuestionCount,
+        },
       },
     });
   } catch (error) {

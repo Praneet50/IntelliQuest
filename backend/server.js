@@ -172,6 +172,14 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Lightweight ping endpoint
+app.get("/ping", (req, res) => {
+  res.status(200).json({
+    status: "alive",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Get upload progress
 app.get("/upload-progress/:uploadId", (req, res) => {
   const { uploadId } = req.params;

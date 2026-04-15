@@ -315,9 +315,11 @@ function buildPromptForLLM(text, options, promptOptions = {}) {
   const explanationInstruction = concise
     ? "Keep explanations extremely short, with no more than one sentence each."
     : "Keep explanations brief and directly tied to the source text.";
+  const standaloneQuestionInstruction =
+    "Write every question as a fully self-contained assessment item. Do not mention or imply hidden source material. Avoid phrases like 'given text', 'passage', 'above text', 'from the text', 'according to the text', or 'based on the text'.";
 
   const promptTemplates = {
-    "multiple-choice": `Generate ${numQuestions} multiple-choice questions based on the following text. Each question should have 4 options (A, B, C, D) with one correct answer. Difficulty level: ${difficulty}. ${explanationInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
+    "multiple-choice": `Generate ${numQuestions} multiple-choice questions from the topic covered in the source content. Each question should have 4 options (A, B, C, D) with one correct answer. Difficulty level: ${difficulty}. ${explanationInstruction} ${standaloneQuestionInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
 
 IMPORTANT: Return ONLY a valid JSON array. Do not include any markdown formatting, code blocks, or explanatory text. Use double quotes for all strings.
 
@@ -336,7 +338,7 @@ Format your response exactly like this:
 Text content:
 ${sourceText}`,
 
-    "true-false": `Generate ${numQuestions} true/false questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
+    "true-false": `Generate ${numQuestions} true/false questions from the topic covered in the source content. Difficulty level: ${difficulty}. ${explanationInstruction} ${standaloneQuestionInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
 
 IMPORTANT: Return ONLY a valid JSON array. Do not include any markdown formatting, code blocks, or explanatory text. Use double quotes for all strings.
 
@@ -354,7 +356,7 @@ Format your response exactly like this:
 Text content:
 ${sourceText}`,
 
-    "short-answer": `Generate ${numQuestions} short-answer questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
+    "short-answer": `Generate ${numQuestions} short-answer questions from the topic covered in the source content. Difficulty level: ${difficulty}. ${explanationInstruction} ${standaloneQuestionInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
 
 IMPORTANT: Return ONLY a valid JSON array. Do not include any markdown formatting, code blocks, or explanatory text. Use double quotes for all strings.
 
@@ -372,7 +374,7 @@ Format your response exactly like this:
 Text content:
 ${sourceText}`,
 
-    essay: `Generate ${numQuestions} essay questions based on the following text. Difficulty level: ${difficulty}. ${explanationInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
+    essay: `Generate ${numQuestions} essay questions from the topic covered in the source content. Difficulty level: ${difficulty}. ${explanationInstruction} ${standaloneQuestionInstruction} ${bloomInstruction} ${courseOutcomeInstruction}
 
 IMPORTANT: Return ONLY a valid JSON array. Do not include any markdown formatting, code blocks, or explanatory text. Use double quotes for all strings.
 
@@ -608,7 +610,6 @@ function generateMockQuestions(
   numQuestions,
   providedCourseOutcomes = [],
 ) {
-  const textPreview = text.substring(0, 100) + "...";
   const allowedLevels = getBloomLevelsForDifficulty(difficulty);
   const getFallbackBloomLevel = (index) =>
     allowedLevels[index % allowedLevels.length];
@@ -627,7 +628,7 @@ function generateMockQuestions(
   const mockQuestions = {
     "multiple-choice": Array.from({ length: numQuestions }, (_, i) => ({
       id: i + 1,
-      question: `Sample multiple-choice question ${i + 1} based on the text: "${textPreview}"`,
+      question: `Sample multiple-choice question ${i + 1}?`,
       bloomLevel: getFallbackBloomLevel(i),
       courseOutcome: getFallbackCourseOutcomeId(i),
       options: [
@@ -645,7 +646,7 @@ function generateMockQuestions(
 
     "true-false": Array.from({ length: numQuestions }, (_, i) => ({
       id: i + 1,
-      question: `Sample true/false statement ${i + 1} based on the text`,
+      question: `Sample true/false statement ${i + 1}.`,
       bloomLevel: getFallbackBloomLevel(i),
       courseOutcome: getFallbackCourseOutcomeId(i),
       correctAnswer: i % 2 === 0,
@@ -657,7 +658,7 @@ function generateMockQuestions(
 
     "short-answer": Array.from({ length: numQuestions }, (_, i) => ({
       id: i + 1,
-      question: `Sample short-answer question ${i + 1} based on the text?`,
+      question: `Sample short-answer question ${i + 1}?`,
       bloomLevel: getFallbackBloomLevel(i),
       courseOutcome: getFallbackCourseOutcomeId(i),
       sampleAnswer:
@@ -669,7 +670,7 @@ function generateMockQuestions(
 
     essay: Array.from({ length: numQuestions }, (_, i) => ({
       id: i + 1,
-      question: `Sample essay prompt ${i + 1}: Analyze and discuss the main concepts presented in the text.`,
+      question: `Sample essay prompt ${i + 1}: Analyze and discuss the main concepts of the topic.`,
       bloomLevel: getFallbackBloomLevel(i),
       courseOutcome: getFallbackCourseOutcomeId(i),
       guidelines:
